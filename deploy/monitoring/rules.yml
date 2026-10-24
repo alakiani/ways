@@ -40,25 +40,25 @@ groups:
           severity: warning
         annotations:
           summary: "Paths of Rule {{ $labels.rule }} on {{ $labels.node }} flap: {{ $value | printf \"%.0f\" }} failure moves in an hour"
-      - alert: EndpointSlotRepointed
-        expr: "increase(ways_slot_repoints_total[10m]) > 0"
-        labels:
-          severity: info
-        annotations:
-          summary: "Endpoint Slot {{ $labels.slot }} was re-pointed"
-      - alert: BridgeLostSlotEligibility
-        expr: "ways_slot_bridge_eligible == 0"
+      - alert: BridgeRemovedFromBridgeAddress
+        expr: "ways_bridge_address_member == 0"
         labels:
           severity: warning
         annotations:
-          summary: "Bridge {{ $labels.node }} lost Endpoint Slot eligibility"
-      - alert: AllSlotsOnOneBridge
-        expr: "ways_slot_bridges_in_use == 1"
+          summary: "Bridge {{ $labels.node }} is out of the Bridge Address"
+      - alert: BridgeReturnedToBridgeAddress
+        expr: "increase(ways_bridge_address_joins_total[10m]) > 0"
+        labels:
+          severity: info
+        annotations:
+          summary: "A Bridge joined the Bridge Address"
+      - alert: BridgeAddressDownToOneBridge
+        expr: "ways_bridge_address_members == 1"
         for: 2m
         labels:
           severity: critical
         annotations:
-          summary: "Every Endpoint Slot points at one Bridge"
+          summary: "The Bridge Address holds only one Bridge"
       - alert: ArvanCloudDNSFailing
         expr: "ways_arvan_consecutive_failures >= 3"
         labels:
@@ -66,7 +66,7 @@ groups:
         annotations:
           summary: "ArvanCloud's DNS API failed {{ $value }} times in a row"
       - alert: ProbeFailing
-        expr: "ways_slot_probe_ok == 0"
+        expr: "ways_probe_ok == 0"
         for: 1m
         labels:
           severity: warning

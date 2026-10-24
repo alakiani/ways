@@ -16,10 +16,11 @@ import (
 
 var update = flag.Bool("update", false, "rewrite deploy/monitoring from this package")
 
-// The alert table of ADR 0006, by the names the rules give its rows.
+// The alert table of ADR 0006 as ADR 0011 amends it, by the names the
+// rules give its rows.
 var alertTable = []string{
 	"NodeUnreachable", "CoordinatorUnreachableFromNode", "LinkDown", "BridgeHasNoDefaultPath", "PathFlapping",
-	"EndpointSlotRepointed", "BridgeLostSlotEligibility", "AllSlotsOnOneBridge", "ArvanCloudDNSFailing",
+	"BridgeRemovedFromBridgeAddress", "BridgeReturnedToBridgeAddress", "BridgeAddressDownToOneBridge", "ArvanCloudDNSFailing",
 	"ProbeFailing", "CertificateOrTokenExpiring", "ClockSkew", "CIDRRefresh", "BackupStale", "MeteringBacklog",
 	"MeteringMismatch", "SnapshotApplyFailed", "DiskFull", "ConntrackFull",
 }
@@ -39,7 +40,7 @@ func TestRulesCoverTheAlertTable(t *testing.T) {
 		`max_over_time(up{job="agents"}[3m]) == 0 and on (node) ways_node_report_age_seconds > 180`,
 		"severity: critical",
 		"for: 2m",
-		`ways_slot_bridge_eligible == 0`,
+		`ways_bridge_address_member == 0`,
 		`increase(ways_path_moves_total{kind="failure"}[1h]) > 6`,
 		`changes((max by (link) (ways_link_instance_up) == bool 0)[1h:]) >= 5`,
 		`ways_client_cert_expiry_timestamp_seconds - time() < 2592000`,
@@ -97,9 +98,9 @@ func TestMeshDashboard(t *testing.T) {
 	}
 	qs := MeshDashboardQueries()
 	joined := strings.Join(qs, "\n")
-	// ADR 0006's Mesh dashboard: Nodes, the Link grid, Paths, slots.
+	// ADR 0006's Mesh dashboard: Nodes, the Link grid, Paths, the Bridge Address.
 	for _, want := range []string{`up{job="agents"}`, "ways_link_rtt_seconds", "ways_link_loss_ratio", "ways_link_transport",
-		"ways_path_buckets", "ways_slot_points_to",
+		"ways_path_buckets", "ways_bridge_address_member",
 		// Issue #51: weights and cutoff, throughput with its age, instances.
 		"ways_path_weight", "ways_path_cut_off", "ways_link_throughput_mbps",
 		"ways_link_throughput_measured_timestamp_seconds", "ways_link_throughput_transport", "ways_link_instance_up"} {

@@ -35,7 +35,7 @@ const telegramAddr = "149.154.167.220"
 // TestMonitoring is session 11's "proves in the lab" test: Prometheus
 // finds every Agent through the Coordinator and scrapes it over the
 // allowlisted mTLS port; the alerts the acceptance test relies on (Exit
-// down, Link down, Bridge lost slot eligibility) fire and reach Telegram
+// down, Link down, Bridge removed from the Bridge Address) fire and reach Telegram
 // through a healthy Exit, never from the Coordinator itself; an alert no
 // Exit can deliver waits on the panel's banner until one can.
 func TestMonitoring(t *testing.T) {
@@ -82,9 +82,10 @@ func TestMonitoring(t *testing.T) {
 	co.c.Monitor.Telegram.BotToken, co.c.Monitor.Telegram.ChatID = "lab-bot-token", "-100123"
 	co.c.Monitor.Dial = nsDial(coordNode)
 	co.c.Monitor.RetryEvery = time.Second
-	co.c.Slots.ProbeEvery = 2 * time.Second
-	co.c.Slots.ProbeHostname = "check.abroad"
-	co.c.Slots.Enter = coordNode.Do
+	co.c.Address.ProbeEvery = 2 * time.Second
+	co.c.Address.RemoveAfter, co.c.Address.RejoinAfter = 4*time.Second, 4*time.Second
+	co.c.Address.ProbeHostname = "check.abroad"
+	co.c.Address.Enter = coordNode.Do
 	if err := co.c.InitProbe(ctx); err != nil {
 		t.Fatal(err)
 	}
@@ -138,7 +139,7 @@ func TestMonitoring(t *testing.T) {
 			return m.ruleHealth(b, defaultRule).Mode == "direct"
 		})
 	}
-	go co.c.RunEndpointSlots(ctx)
+	go co.c.RunBridgeAddress(ctx)
 
 	// Prometheus scrapes every Agent, found through the Coordinator.
 	nodes := []string{"ab1", "ab2", "ir1", "ir3"}
@@ -151,8 +152,9 @@ func TestMonitoring(t *testing.T) {
 			slices.Equal(prom.series(`ways_path_ok{default="true"} == 1`, "node"), []string{"ir1", "ir3"}) &&
 			len(prom.series(`ways_coordinator_last_contact_seconds < 30`, "node")) == len(nodes)
 	})
-	testutil.Eventually(t, 60*time.Second, "both Bridges are eligible for slots", func() bool {
-		return slices.Equal(prom.series(`ways_slot_bridge_eligible == 1`, "node"), []string{"ir1", "ir3"})
+	testutil.Eventually(t, 60*time.Second, "both Bridges are eligible and in the Bridge Address", func() bool {
+		return slices.Equal(prom.series(`ways_bridge_eligible == 1`, "node"), []string{"ir1", "ir3"}) &&
+			slices.Equal(prom.series(`ways_bridge_address_member == 1`, "node"), []string{"ir1", "ir3"})
 	})
 	for _, q := range monitoring.MeshDashboardQueries() {
 		prom.mustParse(q)
@@ -236,9 +238,14 @@ func TestMonitoring(t *testing.T) {
 		t.Errorf("no instance of ab2/ir3 is Up")
 	}
 
-	// Kill ir3, a Bridge: it loses slot eligibility.
+	// Kill ir3, a Bridge: it leaves the Bridge Address, which is down to
+	// ir1 alone.
 	l.Filter(lab.DropAll(l.Node("ir3")))
-	tg.await(t, 90*time.Second, "BridgeLostSlotEligibility", "ir3", ab2)
+	tg.await(t, 90*time.Second, "BridgeRemovedFromBridgeAddress", "ir3", ab2)
+	tg.await(t, 60*time.Second, "BridgeAddressDownToOneBridge", "", ab2)
+	if in := prom.series(`ways_bridge_address_member == 1`, "node"); !slices.Equal(in, []string{"ir1"}) {
+		t.Errorf("the Bridge Address holds %v, want ir1 alone", in)
+	}
 
 	// Every message came through an Exit, never from the Coordinator, and
 	// once ab1 died, through ab2.

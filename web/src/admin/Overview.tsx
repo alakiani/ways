@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import { api, errorOf } from "../api/client";
-import { ago, bytes, type Overview, type SlotRebalance } from "./api";
+import { api } from "../api/client";
+import { ago, bytes, type Overview } from "./api";
 
 // The status board (variant A in the prototype): Node tiles, a Link
 // latency matrix, and the Coordinator card.
@@ -86,26 +86,17 @@ export function OverviewScreen() {
         </tbody>
       </table>
 
-      <h2>Endpoint Slots</h2>
-      <table data-testid="endpoint-slots">
+      <h2>
+        Bridge Address <span dir="ltr">{o.bridge_address.host}</span>
+      </h2>
+      {!o.bridge_address.published && <p className="error">The record has not been updated since the Coordinator started.</p>}
+      <table data-testid="bridge-address">
         <tbody>
-          {o.endpoint_slots.slots.map((s) => (
-            <tr key={s.name}>
-              <th>{s.name}</th>
-              <td>{s.bridge ?? "unassigned"}</td>
-              <td className={s.addr ? "" : "error"}>{s.addr ?? "record update due"}</td>
-              <td>
-                since {ago(s.since)}, re-pointed {s.repoints}×
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-      <table data-testid="slot-bridges">
-        <tbody>
-          {o.endpoint_slots.bridges.map((b) => (
+          {o.bridge_address.bridges.map((b) => (
             <tr key={b.name}>
               <th>{b.name}</th>
+              <td>{b.addr ?? "no address yet"}</td>
+              <td className={b.in_record ? "up" : "down"}>{b.in_record ? `in the record since ${ago(b.joined)}` : "out of the record"}</td>
               <td className={b.eligible ? "up" : "down"}>{b.eligible ? "eligible" : (b.reasons ?? ["not probed yet"]).join(", ")}</td>
               <td>
                 probe {b.probe ? (b.probe.ok ? "passing" : "failing") : "pending"} {b.probe && ago(b.probe.at)}
@@ -114,7 +105,9 @@ export function OverviewScreen() {
           ))}
         </tbody>
       </table>
-      <RebalanceSlots onApplied={load} />
+      <p>
+        Since the Coordinator started: {o.bridge_address.joins} joined, {o.bridge_address.removals} removed.
+      </p>
 
       <h2>Coordinator</h2>
       <div className="card">
@@ -140,66 +133,5 @@ export function OverviewScreen() {
         </p>
       </div>
     </section>
-  );
-}
-
-// RebalanceSlots spreads the Endpoint Slots over the eligible Bridges on
-// an Admin's demand (ADR 0005): it previews the moves, then applies them on
-// confirm. Slots never move back on their own.
-function RebalanceSlots({ onApplied }: { onApplied: () => void }) {
-  const [plan, setPlan] = useState<SlotRebalance | null>(null);
-  const [moved, setMoved] = useState<SlotRebalance | null>(null);
-  const [error, setError] = useState("");
-  const preview = async () => {
-    const { data, error } = await api.GET("/v1/admin/slots/rebalance");
-    setPlan(data ?? null);
-    setMoved(null);
-    setError(data ? "" : (errorOf(error) ?? "failed"));
-  };
-  const apply = async () => {
-    const { data, error } = await api.POST("/v1/admin/slots/rebalance");
-    setPlan(null);
-    setMoved(data ?? null);
-    setError(data ? "" : (errorOf(error) ?? "failed"));
-    onApplied();
-  };
-  const moves = (r: SlotRebalance) => (
-    <ul>
-      {r.moves.map((m) => (
-        <li key={m.slot}>
-          {m.slot}: {m.from ?? "unassigned"} → {m.to}
-        </li>
-      ))}
-    </ul>
-  );
-
-  return (
-    <div className="card" data-testid="slot-rebalance">
-      <button type="button" onClick={preview}>
-        Rebalance slots
-      </button>
-      {error && <p className="error">{error}</p>}
-      {plan && plan.moves.length === 0 && <p data-testid="rebalance-balanced">Already balanced.</p>}
-      {plan && plan.moves.length > 0 && (
-        <div data-testid="rebalance-plan">
-          {moves(plan)}
-          <p className="warning">{plan.note}</p>
-          <div className="actions">
-            <button type="button" onClick={apply}>
-              Apply
-            </button>
-            <button type="button" className="link" onClick={() => setPlan(null)}>
-              Cancel
-            </button>
-          </div>
-        </div>
-      )}
-      {moved && (
-        <div data-testid="rebalance-moved">
-          <p>{moved.moves.length === 0 ? "Already balanced: nothing moved." : `Moved ${moved.moves.length} slot${moved.moves.length > 1 ? "s" : ""}:`}</p>
-          {moves(moved)}
-        </div>
-      )}
-    </div>
   );
 }

@@ -22,9 +22,6 @@ const (
 	InviteTTL  = 7 * 24 * time.Hour
 )
 
-// DefaultEndpointSlots are the three domestic Endpoint Slots (ADR 0005).
-var DefaultEndpointSlots = []string{"a.wayfinder.ir", "b.wayfinder.ir", "c.wayfinder.ir"}
-
 // IPv6Placeholder is the ULA /128 every config carries, so dual-stack apps
 // keep IPv6 inside the tunnel, where Bridges drop it (ADR 0003).
 const IPv6Placeholder = "fd77::1/128"
@@ -492,8 +489,8 @@ func (c *Coordinator) issueDevice(w http.ResponseWriter, r *http.Request, replac
 	writeJSON(w, http.StatusOK, protocol.IssuedDevice{Device: c.deviceInfo(r, d, cl.account), Config: cfg})
 }
 
-// deviceConfig is what the browser needs to render a Device's three
-// configs. Main is slot number mod 3, then the next two (ADR 0005).
+// deviceConfig is what the browser needs to render a Device's config,
+// which reaches whichever Bridge the Bridge Address answers with (ADR 0011).
 func (c *Coordinator) deviceConfig(r *http.Request, d store.UserDevice) (protocol.DeviceConfig, error) {
 	pub, err := c.BridgePublicKey(r.Context())
 	if err != nil {
@@ -507,11 +504,7 @@ func (c *Coordinator) deviceConfig(r *http.Request, d store.UserDevice) (protoco
 	cfg := protocol.DeviceConfig{
 		Address: netip.PrefixFrom(d.Address, 32).String(), IPv6Placeholder: IPv6Placeholder,
 		DNS: resolver.Addr().String(), BridgePublicKey: pub, AllowedIPs: []string{"0.0.0.0/0", "::/0"},
-	}
-	slots := c.EndpointSlots
-	for i, label := range []string{"Main", "Backup 1", "Backup 2"} {
-		cfg.Endpoints = append(cfg.Endpoints, protocol.Endpoint{Label: label,
-			Host: slots[(int(d.Seq)+i)%len(slots)], Port: int(b.ListenPort)})
+		Endpoint: protocol.Endpoint{Host: c.BridgeAddress, Port: int(b.ListenPort)},
 	}
 	return cfg, nil
 }

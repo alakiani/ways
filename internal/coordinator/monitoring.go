@@ -123,7 +123,7 @@ func (c *Coordinator) serviceDiscovery(w http.ResponseWriter, r *http.Request) {
 }
 
 // serveMetrics is the Coordinator's own /metrics (ADR 0006). Labels name
-// Nodes, slots, sets and tokens, never a Device or User.
+// Nodes, sets and tokens, never a Device or User.
 func (c *Coordinator) serveMetrics(w http.ResponseWriter, r *http.Request) {
 	var m metrics.Writer
 	if err := c.writeMetrics(r.Context(), &m); err != nil {
@@ -156,36 +156,33 @@ func (c *Coordinator) writeMetrics(ctx context.Context, m *metrics.Writer) error
 		}
 	}
 
-	// Endpoint Slots (ADR 0005).
-	slots, err := c.EndpointSlotStatus(ctx)
+	// The Bridge Address (ADR 0011).
+	addr, err := c.BridgeAddressStatus(ctx)
 	if err != nil {
 		return err
 	}
-	eligible := 0
-	for _, b := range slots.Bridges {
+	eligible, members := 0, 0
+	for _, b := range addr.Bridges {
+		m.Bool("ways_bridge_address_member", "1 while the Bridge is in the Bridge Address's record.", b.InRecord, "node", b.Name)
+		if b.InRecord {
+			members++
+		}
 		if b.Probe == nil {
 			continue
 		}
-		m.Bool("ways_slot_probe_ok", "1 while the probe Device passes on the Bridge.", b.Probe.OK, "node", b.Name)
-		m.Bool("ways_slot_bridge_eligible", "1 while the Bridge may hold an Endpoint Slot.", b.Eligible, "node", b.Name)
+		m.Bool("ways_probe_ok", "1 while the probe Device passes on the Bridge.", b.Probe.OK, "node", b.Name)
+		m.Bool("ways_bridge_eligible", "1 while the Bridge may be in the Bridge Address.", b.Eligible, "node", b.Name)
 		if b.Eligible {
 			eligible++
 		}
 	}
-	m.Gauge("ways_slot_eligible_bridges", "Bridges that may hold an Endpoint Slot.", float64(eligible))
-	inUse := map[string]bool{}
-	for _, s := range slots.Slots {
-		if s.Bridge == "" {
-			continue
-		}
-		inUse[s.Bridge] = true
-		m.Gauge("ways_slot_points_to", "The Bridge each Endpoint Slot points to.", 1, "slot", s.Name, "node", s.Bridge)
-		m.Counter("ways_slot_repoints_total", "Moves of the Endpoint Slot off a failed Bridge.", float64(s.Repoints), "slot", s.Name)
-	}
-	m.Gauge("ways_slot_bridges_in_use", "Bridges holding at least one Endpoint Slot.", float64(len(inUse)))
-	c.slots.mu.Lock()
-	dnsFailures := c.slots.dnsFailures
-	c.slots.mu.Unlock()
+	m.Gauge("ways_bridge_address_eligible_bridges", "Bridges that may be in the Bridge Address.", float64(eligible))
+	m.Gauge("ways_bridge_address_members", "Bridges in the Bridge Address's record.", float64(members))
+	m.Counter("ways_bridge_address_joins_total", "Bridges that joined the Bridge Address's record.", float64(addr.Joins))
+	m.Counter("ways_bridge_address_removals_total", "Bridges removed from the Bridge Address's record.", float64(addr.Removals))
+	c.address.mu.Lock()
+	dnsFailures := c.address.dnsFailures
+	c.address.mu.Unlock()
 	m.Gauge("ways_arvan_consecutive_failures", "ArvanCloud DNS API calls failed in a row.", float64(dnsFailures))
 
 	// The IR feed (ADR 0004).
@@ -358,7 +355,7 @@ func (c *Coordinator) relay(ctx context.Context, text string) error {
 		if err != nil {
 			return err
 		}
-		if h != nil && h.SeenAddr != "" && now.Sub(h.ReceivedAt) <= c.Slots.ReportingWithin {
+		if h != nil && h.SeenAddr != "" && now.Sub(h.ReceivedAt) <= c.Address.ReportingWithin {
 			exits = append(exits, exit{n, h})
 		}
 	}

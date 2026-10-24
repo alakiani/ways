@@ -109,22 +109,20 @@ type IssuedDevice struct {
 	Config DeviceConfig `json:"config"`
 }
 
-// DeviceConfig is the shared part of a Device's configs; each Endpoint is
-// one config (ADR 0005).
+// DeviceConfig is what a Device's one config needs (ADR 0011).
 type DeviceConfig struct {
-	Address         string     `json:"address"`          // the Device's /32
-	IPv6Placeholder string     `json:"ipv6_placeholder"` // a ULA /128, so apps drop IPv6 inside the tunnel
-	DNS             string     `json:"dns"`
-	BridgePublicKey string     `json:"bridge_public_key"`
-	AllowedIPs      []string   `json:"allowed_ips"`
-	Endpoints       []Endpoint `json:"endpoints"` // Main, Backup 1, Backup 2
+	Address         string   `json:"address"`          // the Device's /32
+	IPv6Placeholder string   `json:"ipv6_placeholder"` // a ULA /128, so apps drop IPv6 inside the tunnel
+	DNS             string   `json:"dns"`
+	BridgePublicKey string   `json:"bridge_public_key"`
+	AllowedIPs      []string `json:"allowed_ips"`
+	Endpoint        Endpoint `json:"endpoint"`
 }
 
-// Endpoint is one config's Endpoint Slot.
+// Endpoint is where the config reaches a Bridge: the Bridge Address.
 type Endpoint struct {
-	Label string `json:"label"`
-	Host  string `json:"host"`
-	Port  int    `json:"port"`
+	Host string `json:"host"`
+	Port int    `json:"port"`
 }
 
 // CreateInvite asks for a new-User Invite. It may preset the User's

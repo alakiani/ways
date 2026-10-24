@@ -151,7 +151,7 @@ func (c *Coordinator) adminOverview(w http.ResponseWriter, r *http.Request) {
 		o.Sets, err = c.setInfos(ctx)
 	}
 	if err == nil {
-		o.EndpointSlots, err = c.EndpointSlotStatus(ctx)
+		o.BridgeAddress, err = c.BridgeAddressStatus(ctx)
 	}
 	if err != nil {
 		c.internalError(w, err)
@@ -171,27 +171,6 @@ func (c *Coordinator) adminOverview(w http.ResponseWriter, r *http.Request) {
 		o.Nodes = []protocol.NodeTile{}
 	}
 	writeJSON(w, http.StatusOK, o)
-}
-
-func (c *Coordinator) adminSlotRebalance(w http.ResponseWriter, r *http.Request) {
-	plan, err := c.RebalanceSlots(r.Context(), false)
-	if err != nil {
-		c.internalError(w, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, plan)
-}
-
-// adminApplySlotRebalance moves the slots. If ArvanCloud fails, the moves
-// stay in the store and the next round retries the records, as after a
-// failure move.
-func (c *Coordinator) adminApplySlotRebalance(w http.ResponseWriter, r *http.Request) {
-	moved, err := c.RebalanceSlots(r.Context(), true)
-	if err != nil {
-		c.internalError(w, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, moved)
 }
 
 func (c *Coordinator) adminInvites(w http.ResponseWriter, r *http.Request) {

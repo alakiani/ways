@@ -3,11 +3,8 @@
 package e2e
 
 import (
-	"archive/zip"
 	"bufio"
 	"context"
-	"io"
-	"maps"
 	"net"
 	"net/netip"
 	"os"
@@ -146,9 +143,8 @@ func TestPanelIssuesAWorkingDevice(t *testing.T) {
 	ctx := context.Background()
 	co := startCoordinator(t, l.Node("coord"))
 	co.c.Upstreams = []string{"9.9.9.9"}
-	// In the lab every Endpoint Slot points straight at the one Bridge.
-	bridgeIP := l.Node("ir1").Addr().String()
-	co.c.EndpointSlots = []string{bridgeIP, bridgeIP, bridgeIP}
+	// In the lab the Bridge Address is the one Bridge's address.
+	co.c.BridgeAddress = l.Node("ir1").Addr().String()
 	egressTargets(t, co, l.Node("egress-ab"), l.Node("egress-ir"))
 	co.c.FeedURL, co.c.RIPEstatURL = serveFeed(t, irFeed("2.144.0.0/14", "5.0.0.0/8")), ""
 	if err := co.c.RefreshIRFeed(ctx); err != nil {
@@ -177,30 +173,12 @@ func TestPanelIssuesAWorkingDevice(t *testing.T) {
 		t.Logf("browser: %s", strings.TrimSpace(string(b)))
 	}
 
-	// The zip holds the three configs, readable by any zip reader.
-	zr, err := zip.OpenReader(filepath.Join(out, "configs.zip"))
+	// The one config, saved as the browser offered it.
+	conf, err := os.ReadFile(filepath.Join(out, "ways.conf"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer zr.Close()
-	confs := map[string]string{}
-	for _, f := range zr.File {
-		rc, err := f.Open()
-		if err != nil {
-			t.Fatal(err)
-		}
-		b, err := io.ReadAll(rc) // checks the CRC too
-		rc.Close()
-		if err != nil {
-			t.Fatalf("%s: %v", f.Name, err)
-		}
-		confs[f.Name] = string(b)
-	}
-	names := slices.Sorted(maps.Keys(confs))
-	if !slices.Equal(names, []string{"ways-backup1.conf", "ways-backup2.conf", "ways-main.conf"}) {
-		t.Fatalf("zip holds %v", names)
-	}
-	main := parseConf(t, confs["ways-main.conf"])
+	main := parseConf(t, string(conf))
 	if pub, _ := co.c.BridgePublicKey(ctx); main.peerKey.String() != pub {
 		t.Error("the config names another Bridge key")
 	}

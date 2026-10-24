@@ -21,10 +21,10 @@ try {
   await page.fill("input[name=name]", "phone");
   await page.click("button[type=submit]");
 
-  // The three configs are shown once: one QR code each, and a zip.
-  await page.waitForFunction(() => document.querySelectorAll("figure img").length === 3);
-  const [download] = await Promise.all([page.waitForEvent("download"), page.click("[data-testid=download-zip]")]);
-  await download.saveAs(`${OUT_DIR}/configs.zip`);
+  // The one config is shown once: a QR code and the file.
+  await page.waitForFunction(() => document.querySelectorAll("figure img").length === 1);
+  const [download] = await Promise.all([page.waitForEvent("download"), page.click("[data-testid=download-conf]")]);
+  await download.saveAs(`${OUT_DIR}/ways.conf`);
 
   await page.click("text=ذخیره کردم");
   await page.waitForSelector(".devices li");

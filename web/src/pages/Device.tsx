@@ -58,7 +58,7 @@ export function DevicePage({ id, onChange }: { id: string; onChange: () => void 
       </dl>
       <h2>{fa.usage}</h2>
       {usage && <Usage usage={usage} />}
-      <p className="hint">{fa.backupHint}</p>
+      <p className="hint">{fa.stuckHint}</p>
       {!device.revoked && (
         <div className="actions">
           <p>{fa.replaceHint}</p>

@@ -355,23 +355,14 @@ func TestDevices(t *testing.T) {
 	if cfg.BridgePublicKey != pub {
 		t.Error("config names another Bridge key")
 	}
-	labels, hosts := []string{}, map[string]bool{}
-	for _, e := range cfg.Endpoints {
-		labels = append(labels, e.Label)
-		hosts[e.Host] = true
-		if e.Port != DefaultDevicePort {
-			t.Errorf("endpoint port %d", e.Port)
-		}
+	// One config, reaching whichever Bridge the Bridge Address answers with.
+	if cfg.Endpoint != (protocol.Endpoint{Host: "bridge.wayfinder.ir", Port: DefaultDevicePort}) {
+		t.Errorf("endpoint = %+v", cfg.Endpoint)
 	}
-	if !slices.Equal(labels, []string{"Main", "Backup 1", "Backup 2"}) || len(hosts) != 3 {
-		t.Errorf("endpoints = %+v", cfg.Endpoints)
-	}
-
-	// Main rotates over the slots from one Device to the next.
 	var second protocol.IssuedDevice
 	cl.must(200, "POST", "/v1/me/devices", protocol.NewDevice{Name: "laptop", PublicKey: pubKey(t)}, &second)
-	if second.Config.Endpoints[0].Host == cfg.Endpoints[0].Host {
-		t.Error("two Devices in a row have the same Main slot")
+	if second.Config.Endpoint != cfg.Endpoint {
+		t.Errorf("a second Device reaches %+v", second.Config.Endpoint)
 	}
 	cl.must(200, "POST", "/v1/me/devices", protocol.NewDevice{Name: "tablet", PublicKey: pubKey(t)}, nil)
 	cl.must(409, "POST", "/v1/me/devices", protocol.NewDevice{Name: "fourth", PublicKey: pubKey(t)}, nil) // cap 3

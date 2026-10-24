@@ -9,9 +9,9 @@ type Overview struct {
 	Nodes []NodeTile `json:"nodes"`
 	Links []LinkTile `json:"links"`
 	Sets  []SetInfo  `json:"sets"`
-	// EndpointSlots are the slots and the probe's view of each domestic
-	// Bridge (ADR 0005).
-	EndpointSlots SlotStatus `json:"endpoint_slots"`
+	// BridgeAddress is the Bridges its record holds and the probe's view
+	// of each domestic Bridge (ADR 0011).
+	BridgeAddress AddressStatus `json:"bridge_address"`
 	// Backup is the nightly backup's state (ADR 0001).
 	Backup BackupStatus `json:"backup"`
 	// UndeliveredAlerts are alerts no Exit could relay to Telegram yet,
@@ -211,47 +211,33 @@ type IssuedToken struct {
 	Secret string    `json:"secret"`
 }
 
-// SlotStatus is where the Endpoint Slots point and why.
-type SlotStatus struct {
-	Slots   []SlotTile   `json:"slots"`
-	Bridges []SlotBridge `json:"bridges"`
+// AddressStatus is the Bridge Address and the Bridges behind it.
+type AddressStatus struct {
+	Host    string          `json:"host"` // such as bridge.wayfinder.ir
+	Bridges []AddressBridge `json:"bridges"`
+	// Published is false until ArvanCloud has accepted the record since
+	// the Coordinator started.
+	Published bool `json:"published"`
+	// Joins and Removals count Bridges joining and leaving the record
+	// since the Coordinator started.
+	Joins    int `json:"joins"`
+	Removals int `json:"removals"`
 }
 
-// SlotTile is one Endpoint Slot.
-type SlotTile struct {
-	Name   string `json:"name"`             // such as a.wayfinder.ir
-	Bridge string `json:"bridge,omitempty"` // the Bridge's name; absent until one was eligible
-	// Addr is what the DNS record holds; empty while an update is due.
-	Addr     string     `json:"addr,omitempty"`
-	Since    *time.Time `json:"since,omitempty"` // when it last moved
-	Repoints int        `json:"repoints"`
-}
-
-// SlotBridge is one domestic Bridge as slot eligibility judges it.
-type SlotBridge struct {
+// AddressBridge is one domestic Bridge as the Bridge Address judges it.
+type AddressBridge struct {
 	Name     string `json:"name"`
-	Eligible bool   `json:"eligible"`
+	Addr     string `json:"addr,omitempty"` // its public address, as last seen
+	InRecord bool   `json:"in_record"`
+	// Joined is when it last joined the record, while it is in it.
+	Joined   *time.Time `json:"joined,omitempty"`
+	Eligible bool       `json:"eligible"`
 	// Reasons say why it is not eligible.
 	Reasons []string     `json:"reasons,omitempty"`
 	Probe   *ProbeResult `json:"probe,omitempty"`
-	// IneligibleSince is when it last became ineligible; its slots move
-	// 60 s later.
+	// IneligibleSince is when it last became ineligible; it leaves the
+	// record 60 s later.
 	IneligibleSince *time.Time `json:"ineligible_since,omitempty"`
-}
-
-// SlotRebalance is a plan that spreads the Endpoint Slots over the
-// eligible Bridges with the fewest moves, or what applying one moved.
-type SlotRebalance struct {
-	Moves []SlotMove `json:"moves"`
-	// Note says what the moves mean for Users.
-	Note string `json:"note"`
-}
-
-// SlotMove is one Endpoint Slot moving to another Bridge.
-type SlotMove struct {
-	Slot string `json:"slot"`           // such as a.wayfinder.ir
-	From string `json:"from,omitempty"` // the Bridge's name; absent for an unassigned slot
-	To   string `json:"to"`
 }
 
 // ProbeResult is the probe Device's latest check of a Bridge.

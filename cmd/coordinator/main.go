@@ -66,9 +66,10 @@ func serve(args []string, log *slog.Logger) error {
 	panelURL := fs.String("panel-url", "https://wayfinder.ir", "where the panel is served; Invite links point here")
 	feedURL := fs.String("feed-url", irfeed.DefaultURL, "the IR feed (list.rsc)")
 	ripeURL := fs.String("ripestat-url", irfeed.DefaultRIPEstatURL, "RIPEstat's list for the cross-check; empty to skip it")
-	arvanKeyFile := fs.String("arvan-api-key-file", "", "file holding the ArvanCloud API key that edits the Endpoint Slots' records; unset leaves the records alone")
-	arvanZone := fs.String("arvan-zone", "wayfinder.ir", "the ArvanCloud zone holding the Endpoint Slots")
-	arvanTTL := fs.Int("arvan-ttl", 120, "TTL of the Endpoint Slots' records, in seconds: the lowest ArvanCloud allows")
+	bridgeAddress := fs.String("bridge-address", coordinator.DefaultBridgeAddress, "the Bridge Address: the hostname in every Device's config, in -arvan-zone; changing it affects only configs issued afterwards")
+	arvanKeyFile := fs.String("arvan-api-key-file", "", "file holding the ArvanCloud API key that edits the Bridge Address's record; unset leaves the record alone")
+	arvanZone := fs.String("arvan-zone", "wayfinder.ir", "the ArvanCloud zone holding the Bridge Address")
+	arvanTTL := fs.Int("arvan-ttl", 120, "TTL of the Bridge Address's record, in seconds: the lowest ArvanCloud allows")
 	arvanURL := fs.String("arvan-url", arvan.DefaultBaseURL, "ArvanCloud's CDN API")
 	internalListen := fs.String("internal-listen", "127.0.0.1:9101", "internal listener for Prometheus and Alertmanager; keep it on loopback")
 	monitorPort := fs.Uint("monitor-port", 9443, "every Node's monitoring port (ADR 0006)")
@@ -101,6 +102,7 @@ func serve(args []string, log *slog.Logger) error {
 	}
 	c := coordinator.New(s, authority, log)
 	c.PanelURL = *panelURL
+	c.BridgeAddress = *bridgeAddress
 	c.GrafanaURL = *grafanaURL
 	c.FeedURL, c.RIPEstatURL = *feedURL, *ripeURL
 	c.SecureCookies = *adminCert != "" // plain HTTP is for development only
@@ -129,7 +131,7 @@ func serve(args []string, log *slog.Logger) error {
 	go c.RunIRFeed(ctx, 24*time.Hour)
 	go c.RunRollUps(ctx, time.Hour)
 	go c.RunQuotaPeriods(ctx, time.Minute)
-	go c.RunEndpointSlots(ctx)
+	go c.RunBridgeAddress(ctx)
 	go c.RunAlertRelay(ctx)
 	go c.RunBackups(ctx)
 

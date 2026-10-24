@@ -28,25 +28,41 @@ type Fake struct {
 func NewFake(key, zone string) *Fake { return &Fake{key: key, zone: zone} }
 
 // Put sets an A record directly, as the operator would in the dashboard.
-func (f *Fake) Put(name, ip string) {
+func (f *Fake) Put(name string, ips ...string) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	var v []aValue
+	for _, ip := range ips {
+		v = append(v, aValue{IP: ip})
+	}
 	if i := f.find(name); i >= 0 {
-		f.records[i].Value = []aValue{{IP: ip}}
+		f.records[i].Value = v
 		return
 	}
 	f.next++
-	f.records = append(f.records, record{ID: strconv.Itoa(f.next), Type: "a", Name: name, Value: []aValue{{IP: ip}}, TTL: 120})
+	f.records = append(f.records, record{ID: strconv.Itoa(f.next), Type: "a", Name: name, Value: v, TTL: 120})
 }
 
-// A returns the first address of the A record name, or "".
-func (f *Fake) A(name string) string {
+// A returns the addresses of the A record name, in order; none if missing.
+func (f *Fake) A(name string) []string {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	if i := f.find(name); i >= 0 && len(f.records[i].Value) > 0 {
-		return f.records[i].Value[0].IP
+	var out []string
+	if i := f.find(name); i >= 0 {
+		for _, v := range f.records[i].Value {
+			out = append(out, v.IP)
+		}
 	}
-	return ""
+	return out
+}
+
+// OneInTurn reports whether the A record name answers each lookup with
+// one of its addresses in turn.
+func (f *Fake) OneInTurn(name string) bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	i := f.find(name)
+	return i >= 0 && f.records[i].IPFilterMode != nil && *f.records[i].IPFilterMode == oneInTurn
 }
 
 // TTL returns the TTL of the A record name.

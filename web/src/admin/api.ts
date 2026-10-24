@@ -10,7 +10,6 @@ export type NodeDetail = components["schemas"]["NodeDetail"];
 export type UserInfo = components["schemas"]["UserInfo"];
 export type TokenInfo = components["schemas"]["TokenInfo"];
 export type TransportList = components["schemas"]["TransportList"];
-export type SlotRebalance = components["schemas"]["SlotRebalance"];
 
 export function ago(iso?: string): string {
   if (!iso) return "never";

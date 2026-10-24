@@ -73,8 +73,6 @@ func (c *Coordinator) routes() []route {
 		{"POST", "/v1/admin/users/{id}/refills", authAdmin, "Give a User Refills to hold, each with its expiry", protocol.GiveRefills{}, protocol.UserInfo{}, c.adminGiveRefills},
 		{"DELETE", "/v1/admin/users/{id}", authAdmin, "Delete a User with their Devices and usage", nil, nil, c.adminDelete},
 		{"GET", "/v1/admin/overview", authAdmin, "The status board: Nodes, Links, the feed", nil, protocol.Overview{}, c.adminOverview},
-		{"GET", "/v1/admin/slots/rebalance", authAdmin, "Plan a rebalance of the Endpoint Slots over the eligible Bridges", nil, protocol.SlotRebalance{}, c.adminSlotRebalance},
-		{"POST", "/v1/admin/slots/rebalance", authAdmin, "Rebalance the Endpoint Slots now; returns what moved", nil, protocol.SlotRebalance{}, c.adminApplySlotRebalance},
 		{"GET", "/v1/admin/invites", authAdmin, "Invites, newest first", nil, []protocol.InviteRecord{}, c.adminInvites},
 		{"POST", "/v1/admin/invites/{id}/withdraw", authAdmin, "Withdraw an open Invite", nil, nil, c.adminWithdrawInvite},
 		{"GET", "/v1/admin/nodes", authAdmin, "Every Node", nil, []protocol.NodeTile{}, c.adminNodes},

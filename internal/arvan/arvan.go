@@ -1,5 +1,5 @@
 // Package arvan points A records at addresses through ArvanCloud's DNS API
-// (CDN API 4.0), which hosts the zone of the Endpoint Slots (ADR 0005).
+// (CDN API 4.0), which hosts the zone of the Bridge Address (ADR 0011).
 package arvan
 
 import (
@@ -42,13 +42,25 @@ type aValue struct {
 	IP string `json:"ip"`
 }
 
+// ipFilterMode is how ArvanCloud answers from a record holding several
+// IPs: the panel's "DNS record load balancing".
+type ipFilterMode struct {
+	Count     string `json:"count"`      // "single": one IP per answer
+	Order     string `json:"order"`      // "rr": round robin
+	GeoFilter string `json:"geo_filter"` // "none"
+}
+
+// oneInTurn answers each lookup with one of the record's IPs, taking turns.
+var oneInTurn = ipFilterMode{Count: "single", Order: "rr", GeoFilter: "none"}
+
 type record struct {
-	ID    string   `json:"id,omitempty"`
-	Type  string   `json:"type"`
-	Name  string   `json:"name"`
-	Value []aValue `json:"value"`
-	TTL   int      `json:"ttl"`
-	Cloud bool     `json:"cloud"`
+	ID           string        `json:"id,omitempty"`
+	Type         string        `json:"type"`
+	Name         string        `json:"name"`
+	Value        []aValue      `json:"value"`
+	TTL          int           `json:"ttl"`
+	Cloud        bool          `json:"cloud"`
+	IPFilterMode *ipFilterMode `json:"ip_filter_mode,omitempty"`
 }
 
 // listed is a record as listed; other types carry other value shapes.
@@ -69,14 +81,22 @@ type envelope struct {
 	Meta    *meta           `json:"meta,omitempty"`
 }
 
-// SetA makes host's A record hold addr alone, creating it if missing. The
-// record stays unproxied, so Devices reach the Bridge itself.
-func (c *Client) SetA(ctx context.Context, host string, addr netip.Addr) error {
+// SetA makes host's A record hold addrs, answering each lookup with one
+// of them in turn, creating the record if missing. The record stays
+// unproxied, so Devices reach the Bridge itself.
+func (c *Client) SetA(ctx context.Context, host string, addrs []netip.Addr) error {
 	name, ok := strings.CutSuffix(host, "."+c.Zone)
-	if !ok || name == "" || !addr.Is4() {
-		return fmt.Errorf("arvan: %s is not an IPv4 A record in zone %s", host, c.Zone)
+	if !ok || name == "" || len(addrs) == 0 {
+		return fmt.Errorf("arvan: %s is not an A record in zone %s with an address", host, c.Zone)
 	}
-	rec := record{Type: "a", Name: name, Value: []aValue{{IP: addr.String()}}, TTL: c.TTL, Cloud: false}
+	mode := oneInTurn
+	rec := record{Type: "a", Name: name, TTL: c.TTL, Cloud: false, IPFilterMode: &mode}
+	for _, a := range addrs {
+		if !a.Is4() {
+			return fmt.Errorf("arvan: %s is not IPv4", a)
+		}
+		rec.Value = append(rec.Value, aValue{IP: a.String()})
+	}
 	id, err := c.find(ctx, name)
 	if err != nil {
 		return err

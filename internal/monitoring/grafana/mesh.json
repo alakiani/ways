@@ -1,7 +1,7 @@
 {
   "uid": "ways-mesh",
   "title": "Mesh",
-  "description": "Nodes, every Link with its latency, loss, transport, instances and throughput, active Paths and their weights, and the Bridge behind each Endpoint Slot (ADR 0006).",
+  "description": "Nodes, every Link with its latency, loss, transport, instances and throughput, active Paths and their weights, and the Bridges in the Bridge Address (ADR 0006, ADR 0011).",
   "tags": ["ways"],
   "timezone": "utc",
   "schemaVersion": 39,
@@ -29,11 +29,11 @@
     {
       "id": 2,
       "type": "table",
-      "title": "Endpoint Slots",
-      "description": "The Bridge each slot points to.",
+      "title": "Bridge Address",
+      "description": "The Bridges its record holds.",
       "gridPos": { "x": 12, "y": 0, "w": 12, "h": 5 },
       "datasource": { "type": "prometheus", "uid": "ways-prometheus" },
-      "targets": [{ "refId": "A", "expr": "ways_slot_points_to == 1", "format": "table", "instant": true }],
+      "targets": [{ "refId": "A", "expr": "ways_bridge_address_member == 1", "format": "table", "instant": true }],
       "transformations": [{ "id": "organize", "options": { "excludeByName": { "Time": true, "Value": true, "__name__": true, "instance": true, "job": true } } }]
     },
     {
@@ -95,11 +95,11 @@
     {
       "id": 8,
       "type": "stat",
-      "title": "Slot eligibility",
+      "title": "Bridge eligibility",
       "description": "Each domestic Bridge as the probe Device sees it.",
       "gridPos": { "x": 0, "y": 29, "w": 24, "h": 5 },
       "datasource": { "type": "prometheus", "uid": "ways-prometheus" },
-      "targets": [{ "refId": "A", "expr": "ways_slot_bridge_eligible", "legendFormat": "{{node}}" }],
+      "targets": [{ "refId": "A", "expr": "ways_bridge_eligible", "legendFormat": "{{node}}" }],
       "fieldConfig": {
         "defaults": {
           "mappings": [{ "type": "value", "options": { "0": { "text": "ineligible", "color": "red" }, "1": { "text": "eligible", "color": "green" } } }],

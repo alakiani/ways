@@ -474,13 +474,13 @@ pause
 
 # ── 7 ─────────────────────────────────────────────────────────────────────
 stage "ArvanCloud: the wayfinder.ir zone"
-say "The panel and Agents use wayfinder.ir; the Endpoint Slots a, b and c.wayfinder.ir live in the same zone."
+say "The panel and Agents use wayfinder.ir; the Bridge Address bridge.wayfinder.ir lives in the same zone."
 open_url "https://panel.arvancloud.ir"
 step "Add the domain wayfinder.ir (CDN service). ArvanCloud then shows you two nameservers."
 step "At your .ir registrar (nic.ir or your reseller), set those two nameservers for wayfinder.ir."
 step "In ArvanCloud's DNS records for wayfinder.ir, add an A record: name @, value $COORD_IP."
 step "Turn the cloud (proxy) icon OFF on that record: Agents need a direct connection on 8443."
-note "Don't create a, b or c yourself: the Coordinator creates and re-points them."
+note "Don't create bridge yourself: the Coordinator creates it and keeps it to the healthy Bridges."
 pause "Press Enter once the A record is saved."
 check_dns() {
   local got
@@ -492,8 +492,8 @@ retry "DNS: wayfinder.ir A record → Coordinator" check_dns
 pause
 
 # ── 8 ─────────────────────────────────────────────────────────────────────
-stage "ArvanCloud: API key for the Endpoint Slots"
-say "The Coordinator re-points a, b and c.wayfinder.ir through ArvanCloud's API."
+stage "ArvanCloud: API key for the Bridge Address"
+say "The Coordinator keeps bridge.wayfinder.ir to the healthy Bridges through ArvanCloud's API."
 open_url "https://panel.arvancloud.ir"
 step "Open your account menu and find API keys (or machine users). I don't know the exact"
 step "menu path in the current panel; ArvanCloud's docs search for 'API key' finds it."

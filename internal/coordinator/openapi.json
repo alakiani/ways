@@ -85,6 +85,75 @@
         ],
         "type": "object"
       },
+      "AddressBridge": {
+        "properties": {
+          "addr": {
+            "type": "string"
+          },
+          "eligible": {
+            "type": "boolean"
+          },
+          "in_record": {
+            "type": "boolean"
+          },
+          "ineligible_since": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "joined": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "probe": {
+            "$ref": "#/components/schemas/ProbeResult"
+          },
+          "reasons": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "eligible",
+          "in_record",
+          "name"
+        ],
+        "type": "object"
+      },
+      "AddressStatus": {
+        "properties": {
+          "bridges": {
+            "items": {
+              "$ref": "#/components/schemas/AddressBridge"
+            },
+            "type": "array"
+          },
+          "host": {
+            "type": "string"
+          },
+          "joins": {
+            "type": "integer"
+          },
+          "published": {
+            "type": "boolean"
+          },
+          "removals": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "bridges",
+          "host",
+          "joins",
+          "published",
+          "removals"
+        ],
+        "type": "object"
+      },
       "BackupStatus": {
         "properties": {
           "configured": {
@@ -215,11 +284,8 @@
           "dns": {
             "type": "string"
           },
-          "endpoints": {
-            "items": {
-              "$ref": "#/components/schemas/Endpoint"
-            },
-            "type": "array"
+          "endpoint": {
+            "$ref": "#/components/schemas/Endpoint"
           },
           "ipv6_placeholder": {
             "type": "string"
@@ -230,7 +296,7 @@
           "allowed_ips",
           "bridge_public_key",
           "dns",
-          "endpoints",
+          "endpoint",
           "ipv6_placeholder"
         ],
         "type": "object"
@@ -326,16 +392,12 @@
           "host": {
             "type": "string"
           },
-          "label": {
-            "type": "string"
-          },
           "port": {
             "type": "integer"
           }
         },
         "required": [
           "host",
-          "label",
           "port"
         ],
         "type": "object"
@@ -1072,8 +1134,8 @@
           "backup": {
             "$ref": "#/components/schemas/BackupStatus"
           },
-          "endpoint_slots": {
-            "$ref": "#/components/schemas/SlotStatus"
+          "bridge_address": {
+            "$ref": "#/components/schemas/AddressStatus"
           },
           "links": {
             "items": {
@@ -1102,7 +1164,7 @@
         },
         "required": [
           "backup",
-          "endpoint_slots",
+          "bridge_address",
           "links",
           "nodes",
           "sets",
@@ -1414,116 +1476,6 @@
           "buckets",
           "candidate",
           "transit"
-        ],
-        "type": "object"
-      },
-      "SlotBridge": {
-        "properties": {
-          "eligible": {
-            "type": "boolean"
-          },
-          "ineligible_since": {
-            "format": "date-time",
-            "type": "string"
-          },
-          "name": {
-            "type": "string"
-          },
-          "probe": {
-            "$ref": "#/components/schemas/ProbeResult"
-          },
-          "reasons": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          }
-        },
-        "required": [
-          "eligible",
-          "name"
-        ],
-        "type": "object"
-      },
-      "SlotMove": {
-        "properties": {
-          "from": {
-            "type": "string"
-          },
-          "slot": {
-            "type": "string"
-          },
-          "to": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "slot",
-          "to"
-        ],
-        "type": "object"
-      },
-      "SlotRebalance": {
-        "properties": {
-          "moves": {
-            "items": {
-              "$ref": "#/components/schemas/SlotMove"
-            },
-            "type": "array"
-          },
-          "note": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "moves",
-          "note"
-        ],
-        "type": "object"
-      },
-      "SlotStatus": {
-        "properties": {
-          "bridges": {
-            "items": {
-              "$ref": "#/components/schemas/SlotBridge"
-            },
-            "type": "array"
-          },
-          "slots": {
-            "items": {
-              "$ref": "#/components/schemas/SlotTile"
-            },
-            "type": "array"
-          }
-        },
-        "required": [
-          "bridges",
-          "slots"
-        ],
-        "type": "object"
-      },
-      "SlotTile": {
-        "properties": {
-          "addr": {
-            "type": "string"
-          },
-          "bridge": {
-            "type": "string"
-          },
-          "name": {
-            "type": "string"
-          },
-          "repoints": {
-            "type": "integer"
-          },
-          "since": {
-            "format": "date-time",
-            "type": "string"
-          }
-        },
-        "required": [
-          "name",
-          "repoints"
         ],
         "type": "object"
       },
@@ -2497,72 +2449,6 @@
           }
         ],
         "summary": "Roll a set's feed back to its previous good update"
-      }
-    },
-    "/v1/admin/slots/rebalance": {
-      "get": {
-        "description": "Admins only, with a session that proved TOTP.",
-        "operationId": "getAdminSlotsRebalance",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/SlotRebalance"
-                }
-              }
-            },
-            "description": "OK"
-          },
-          "default": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            },
-            "description": "An error"
-          }
-        },
-        "security": [
-          {
-            "session": []
-          }
-        ],
-        "summary": "Plan a rebalance of the Endpoint Slots over the eligible Bridges"
-      },
-      "post": {
-        "description": "Admins only, with a session that proved TOTP.",
-        "operationId": "postAdminSlotsRebalance",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/SlotRebalance"
-                }
-              }
-            },
-            "description": "OK"
-          },
-          "default": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            },
-            "description": "An error"
-          }
-        },
-        "security": [
-          {
-            "session": []
-          }
-        ],
-        "summary": "Rebalance the Endpoint Slots now; returns what moved"
       }
     },
     "/v1/admin/tokens": {

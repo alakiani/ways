@@ -298,7 +298,7 @@ func (s *Store) DeleteUserSessions(ctx context.Context, userID, keepToken string
 type UserDevice struct {
 	ID        string
 	UserID    string
-	Seq       int64 // the Device's number, for rotating its configs over the slots
+	Seq       int64 // the Device's number, in order of creation
 	Name      string
 	Address   netip.Addr
 	CreatedAt time.Time

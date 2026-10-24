@@ -52,12 +52,12 @@ type Coordinator struct {
 	Scoring protocol.Scoring
 	// PanelURL is where the panel is served; Invite links point into it.
 	PanelURL string
-	// EndpointSlots are the hostnames in Device configs (ADR 0005).
-	EndpointSlots []string
-	// DNS points the Endpoint Slots' records; nil leaves them alone.
-	DNS SlotDNS
-	// Slots holds the Endpoint Slots' timings and the probe's settings.
-	Slots SlotSettings
+	// BridgeAddress is the hostname in Device configs (ADR 0011).
+	BridgeAddress string
+	// DNS sets the Bridge Address's record; nil leaves it alone.
+	DNS AddressDNS
+	// Address holds the Bridge Address's timings and the probe's settings.
+	Address AddressSettings
 	// SecureCookies marks session cookies Secure; off only for plain-HTTP
 	// development.
 	SecureCookies bool
@@ -78,7 +78,7 @@ type Coordinator struct {
 	reconcileMu sync.Mutex // one Reconcile at a time
 	quotaMu     sync.Mutex
 	quotaSeen   map[string]quotaState // the Users out of Quota in the latest snapshots
-	slots       slotState
+	address     addressState
 	mon         monitorState
 
 	mu      sync.Mutex
@@ -89,10 +89,11 @@ type Coordinator struct {
 func New(s *store.Store, c *ca.CA, log *slog.Logger) *Coordinator {
 	return &Coordinator{store: s, ca: c, log: log, LongPoll: 60 * time.Second,
 		LinkTiming: protocol.DefaultLinkTiming, Egress: DefaultEgressTargets, Upstreams: DefaultUpstreams, Scoring: protocol.DefaultScoring,
-		PanelURL: "https://wayfinder.ir", EndpointSlots: DefaultEndpointSlots, Slots: DefaultSlotSettings, SecureCookies: true,
+		PanelURL: "https://wayfinder.ir", BridgeAddress: DefaultBridgeAddress, Address: DefaultAddressSettings, SecureCookies: true,
 		Monitor: DefaultMonitorSettings, Backup: DefaultBackupSettings, mon: monitorState{poke: make(chan struct{}, 1)},
 		FeedURL: irfeed.DefaultURL, RIPEstatURL: irfeed.DefaultRIPEstatURL, HTTPClient: http.DefaultClient,
-		slots:   slotState{probes: map[string]protocol.ProbeResult{}, inelSince: map[string]time.Time{}, reasons: map[string][]string{}},
+		address: addressState{probes: map[string]protocol.ProbeResult{}, inelSince: map[string]time.Time{}, elSince: map[string]time.Time{},
+			reasons: map[string][]string{}},
 		changed: make(chan struct{})}
 }
 

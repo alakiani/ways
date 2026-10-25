@@ -112,7 +112,8 @@ func TestMeshDashboard(t *testing.T) {
 
 // Issue #51's panels: Path weights per Bridge, Throughput by Link, and an
 // Instances Up state timeline per Link, each repeated over a variable the
-// dashboard defines.
+// dashboard defines. The variables list only the Bridges and Links reporting
+// now: label_values would also list a deleted Node's for the whole time range.
 func TestMeshDashboardRepeatsPerBridgeAndLink(t *testing.T) {
 	var d struct {
 		Panels []struct {
@@ -122,6 +123,7 @@ func TestMeshDashboardRepeatsPerBridgeAndLink(t *testing.T) {
 			List []struct {
 				Name       string `json:"name"`
 				Definition string `json:"definition"`
+				Regex      string `json:"regex"`
 			} `json:"list"`
 		} `json:"templating"`
 	}
@@ -130,12 +132,12 @@ func TestMeshDashboardRepeatsPerBridgeAndLink(t *testing.T) {
 	}
 	vars := map[string]string{}
 	for _, v := range d.Templating.List {
-		vars[v.Name] = v.Definition
+		vars[v.Name] = v.Definition + " " + v.Regex
 	}
 	for _, want := range []struct{ typ, title, repeat, varQuery string }{
-		{"timeseries", "Path weights: $bridge", "bridge", "label_values(ways_path_weight, node)"},
+		{"timeseries", "Path weights: $bridge", "bridge", `query_result(count by (node) (ways_path_weight)) /node="([^"]+)"/`},
 		{"table", "Throughput by Link", "", ""},
-		{"state-timeline", "Instances Up: $link", "link", "label_values(ways_link_instance_up, link)"},
+		{"state-timeline", "Instances Up: $link", "link", `query_result(count by (link) (ways_link_instance_up)) /link="([^"]+)"/`},
 	} {
 		found := false
 		for _, p := range d.Panels {

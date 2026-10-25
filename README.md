@@ -10,18 +10,30 @@ and it never touches a packet.
 
 ## How it works
 
-```
- Device (stock WireGuard)
-    │  bridge.wayfinder.ir  ── one eligible domestic Bridge per DNS lookup
-    ▼
- Bridge (inside Iran) ──Link──► Exit abroad  ──► open internet
-    │                  (GRE / AmneziaWG / WireGuard, chosen by health)
-    └──────────────────Link──► Exit tagged IR ──► Iranian sites
+```mermaid
+flowchart LR
+    D["Device<br/>stock WireGuard app"]
+    B["Bridge<br/>inside Iran"]
+    XA["Exit<br/>abroad"]
+    XI["Exit<br/>tagged IR"]
+    NET(["Open internet"])
+    IRS(["Iranian sites"])
+    C[("Coordinator<br/>Users · Devices · Nodes<br/>Links · Rules · Usage")]
 
- Coordinator (domestic VM): Users, Devices, Nodes, Links, Rules, usage
-    ▲ HTTPS long-poll snapshots, health and usage reports
- Agent on every Node
+    D -->|"bridge.wayfinder.ir"| B
+    B ==>|"Link"| XA
+    B ==>|"Link"| XI
+    XA --> NET
+    XI --> IRS
+
+    C -.->|"snapshots"| B
+    C -.-> XA
+    C -.-> XI
 ```
+
+Solid arrows carry traffic. Dotted arrows are the control channel: the Agent on each Node
+long-polls the Coordinator over HTTPS for its snapshot, and reports health and usage back.
+Each Link uses GRE, AmneziaWG or plain WireGuard, whichever is healthy.
 
 - **Nodes** are Ubuntu servers. Each one runs the **Agent**, which applies what the Coordinator
   decides, measures its **Links**, and reports health and usage. A Node holds the Bridge role,

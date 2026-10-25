@@ -27,7 +27,7 @@ The filter was not dropping UDP as such. It recognised tunnel flows to ordinary 
 | 2 | AmneziaWG over UDP | 2 | `amneziawg-go`, as in ADR 0007 |
 | 3 | Plain WireGuard | 1 | Kernel module, as in ADR 0007 |
 
-- **Same-side Links are unchanged:** plain WireGuard, then AmneziaWG. Nothing filters them.
+- **Same-side Links are unchanged:** plain WireGuard, then AmneziaWG. Nothing filters them. *(Amended by [ADR 0013](0013-same-side-gre.md): same-side Links now have GRE, then plain WireGuard, and no AmneziaWG.)*
 - **Switching, switching back after 5 minutes Up, warm standby and retries** are as in ADR 0007. GRE's standby costs only the 1-per-second probes.
 - **Like any Transport, GRE stays discovered, not configured:** an Admin can disable it in the candidate list, or on one Link.
 

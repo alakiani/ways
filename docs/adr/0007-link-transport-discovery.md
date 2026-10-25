@@ -24,7 +24,7 @@ Nobody records which Transport works from which datacenter, because the filter c
 | Transport | Runs as | Used on |
 | --- | --- | --- |
 | Plain WireGuard | Kernel module, configured over netlink | Same-side Links only *(every Link since [ADR 0009](0009-gre-transport.md))* |
-| AmneziaWG (protocol 2.0 parameters) | The `amneziawg-go` userspace daemon, one per instance, under its own systemd unit, configured over its UAPI socket. No DKMS kernel module. | Every Link |
+| AmneziaWG (protocol 2.0 parameters) | The `amneziawg-go` userspace daemon, one per instance, under its own systemd unit, configured over its UAPI socket. No DKMS kernel module. | Every Link *(Links that cross the filter only, since [ADR 0013](0013-same-side-gre.md))* |
 
 - **Tunnels outlive the Agent.** The Agent configures, measures, and switches, and never carries packets itself. An Agent crash or upgrade changes no tunnel.
 - **No plain WireGuard across the filter.** Its handshake has a fixed fingerprint and is reported blackholed right after the handshake. Probing it every second would mark the abroad IP as a WireGuard server and risk getting that IP blocked, taking the AmneziaWG instances down with it. *(Amended by [ADR 0009](0009-gre-transport.md): plain WireGuard now runs on Links that cross the filter too, last in order, as an accepted risk for redundancy.)*
@@ -35,8 +35,8 @@ Nobody records which Transport works from which datacenter, because the filter c
 A candidate is a Transport with its own UDP port and, for AmneziaWG, its own obfuscation parameters. Different instances present different fingerprints to the filter.
 
 - **A Link that crosses the filter:** 2 AmneziaWG instances. *(Since [ADR 0009](0009-gre-transport.md): 1 GRE instance, then 2 AmneziaWG instances, then 1 plain WireGuard instance.)*
-- **A same-side Link:** 1 plain WireGuard instance and 1 AmneziaWG instance.
-- **Preference order:** plain WireGuard before AmneziaWG; otherwise the order the instances were created.
+- **A same-side Link:** 1 plain WireGuard instance and 1 AmneziaWG instance. *(Since [ADR 0013](0013-same-side-gre.md): 1 GRE instance, then 1 plain WireGuard instance.)*
+- **Preference order:** plain WireGuard before AmneziaWG; otherwise the order the instances were created. *(Since [ADR 0013](0013-same-side-gre.md): GRE, AmneziaWG, then plain WireGuard on every Link.)*
 
 ## Keys, ports, and parameters
 

@@ -145,14 +145,17 @@ func TestLinksAreAFullMeshWithTransportsByFilterSide(t *testing.T) {
 		}
 	}
 
-	// Same side: lower id initiates; WireGuard first, then AmneziaWG.
+	// Same side: lower id initiates; GRE, then plain WireGuard (ADR 0013).
 	same := m.link("ir1", "ir2")
 	lowerIsIR1 := m.nodes["ir1"].ID < m.nodes["ir2"].ID
 	if same.Initiator != lowerIsIR1 {
 		t.Errorf("same-side initiator: ir1 initiates = %v, want %v", same.Initiator, lowerIsIR1)
 	}
-	if ts := transports(same); len(ts) != 2 || ts[0] != protocol.TransportWireGuard || ts[1] != protocol.TransportAmneziaWG {
-		t.Errorf("same-side link transports = %v, want [wireguard amneziawg]", ts)
+	wantSame := []protocol.Transport{protocol.TransportGRE, protocol.TransportWireGuard}
+	for _, l := range []protocol.Link{same, m.link("ir2", "ir1")} {
+		if ts := transports(l); !slices.Equal(ts, wantSame) {
+			t.Errorf("same-side link transports = %v, want %v", ts, wantSame)
+		}
 	}
 	if n := len(m.state("ir1").Links); n != 2 {
 		t.Errorf("ir1 has %d links, want 2", n)
@@ -355,14 +358,16 @@ func TestTagChangeRederivesTransports(t *testing.T) {
 			l = lk
 		}
 	}
-	if ts := transports(l); len(ts) != 2 || ts[0] != protocol.TransportWireGuard {
-		t.Errorf("after the tag change, listener sees %v, want wireguard first", ts)
+	if ts := transports(l); !slices.Equal(ts, []protocol.Transport{protocol.TransportGRE, protocol.TransportWireGuard}) {
+		t.Errorf("after the tag change, listener sees %v, want [gre wireguard]", ts)
 	}
 }
 
 func TestDisabledTransportIsLeftOut(t *testing.T) {
 	m := newMesh(t, "ab1", "ab2")
-	if err := m.s.SetTransports(bg, []protocol.Transport{protocol.TransportAmneziaWG}); err != nil {
+	m.choose("ab1")
+	m.choose("ab2")
+	if err := m.s.SetTransports(bg, []protocol.Transport{protocol.TransportWireGuard, protocol.TransportAmneziaWG}); err != nil {
 		t.Fatal(err)
 	}
 	if err := m.c.Reconcile(bg); err != nil {
@@ -370,8 +375,8 @@ func TestDisabledTransportIsLeftOut(t *testing.T) {
 	}
 	for _, name := range []string{"ab1", "ab2"} {
 		for _, l := range m.state(name).Links {
-			if ts := transports(l); len(ts) > 1 || len(ts) == 1 && ts[0] != protocol.TransportAmneziaWG {
-				t.Errorf("%s: transports %v with wireguard disabled", name, ts)
+			if ts := transports(l); !slices.Equal(ts, []protocol.Transport{protocol.TransportWireGuard}) {
+				t.Errorf("%s: transports %v with gre disabled, want [wireguard]", name, ts)
 			}
 		}
 	}

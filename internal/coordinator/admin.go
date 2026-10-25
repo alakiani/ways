@@ -90,7 +90,7 @@ func (c *Coordinator) linkTiles(ctx context.Context, v adminView, only string) (
 		if ri != nil {
 			t.Transport, t.RTTMillis = ri.Transport, ri.RTTMillis
 		}
-		for _, in := range preferenceOrder(insts, t.Crosses) {
+		for _, in := range preferenceOrder(insts) {
 			if in.LinkID != l.ID {
 				continue
 			}

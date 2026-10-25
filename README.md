@@ -136,3 +136,7 @@ Ubuntu 26.04 containers on every pull request.
   selection, and the limits of stock WireGuard clients.
 
 Issues and specs live in [GitHub Issues](https://github.com/alakiani/ways/issues).
+
+## License
+
+[MIT](LICENSE)

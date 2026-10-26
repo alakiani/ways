@@ -43,13 +43,13 @@ Bridges route each packet by the first matching Rule. A Rule names a Destination
 - **Translation and protocol:** NAT happens only at the Exit. IPv6 is dropped (ADR 0003).
 - **Updates:** each change is one atomic `nft -f` transaction under commit-confirm (ADR 0002).
 - **Headroom:** thousands of Devices, around 100k prefixes, and tens of Rules.
-- **Per-Device policy in phase one is only the effective state** (ADR 0003): a blocked Device is removed as a peer. Matching on source address is reserved for a future User-chosen Exit and for `throttled`, and is not built.
+- **Per-Device policy in phase one is only the effective state** (ADR 0003): a blocked Device is removed as a peer. Matching on source address is reserved for a future User-chosen Exit and for `throttled`, and is not built. *(Amended by [ADR 0014](0014-abroad-devices.md): source matching is built for the Abroad Rule only, which sends all of an Abroad Device's traffic to an `IR` Exit before any destination Rule.)*
 
 ## DNS is always resolved abroad
 
 - **The config's resolver is on the Bridge** at one fixed in-tunnel address, the same on every Bridge (such as `10.77.0.1`). It forwards only to public resolvers abroad and keeps no query logs. *(It is a DNS relay inside the Agent, at `10.77.0.1`, with the upstream resolvers pushed by the Coordinator; its sockets carry the default Rule's mark. DNS pauses for the second or two an Agent restart takes. Decided in [MVP 04](https://github.com/alakiani/ways/issues/20).)* *(Since [ADR 0009](0009-gre-transport.md), it reaches the upstream resolvers over DNS over TLS, because a GRE Link would carry plain DNS in clear across the filter.)*
 - **The resolver's own outbound queries are policy-routed into the default Rule.** As a local process it would otherwise use the main table and leave through the domestic ISP.
-- **Devices cannot bypass it with plain DNS.** All Device traffic on port 53, UDP and TCP, to any address is redirected to the Bridge resolver, and DNS over TLS on port 853 is forced into the default Rule whatever its destination.
+- **Devices cannot bypass it with plain DNS.** All Device traffic on port 53, UDP and TCP, to any address is redirected to the Bridge resolver, and DNS over TLS on port 853 is forced into the default Rule whatever its destination. *(Amended by [ADR 0014](0014-abroad-devices.md): an Abroad Device's lookups are resolved by domestic resolvers through the Abroad Rule, and its DoT follows the Abroad Rule. Every other Device's DNS stays abroad.)*
 - **No fallback to domestic.** If the default Rule has no working Path, DNS fails.
 - **Accepted limit:** DNS over HTTPS cannot be told apart from HTTPS, so it follows its destination's Rule. Domestic CDNs may hand Iranian sites a foreign edge.
 

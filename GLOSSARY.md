@@ -42,6 +42,14 @@ _Avoid_: Route, circuit, chain
 The one hostname in every Device's config. Each lookup of it answers with one eligible domestic Bridge, taking turns among them.
 _Avoid_: Endpoint Slot, pool, entry, gateway, endpoint
 
+**Abroad Bridge**:
+A Bridge outside the filter that Abroad Devices connect to. It is also an Exit, with no `IR` Tag.
+_Avoid_: Reverse bridge, foreign bridge, exit bridge
+
+**Abroad Bridge Address**:
+The one hostname in every Abroad Device's config. Each lookup of it answers with one eligible Abroad Bridge, taking turns among them.
+_Avoid_: Abroad endpoint, reverse address
+
 **Coordinator**:
 The central service that Users, Devices, and Nodes all coordinate with. It holds identity, topology, policy, and metering, and never touches a packet on the data path.
 _Avoid_: Control plane, control node, orchestrator, server
@@ -60,6 +68,10 @@ _Avoid_: Zone, prefix list, geo list, CIDR list
 An admin-defined mapping from a Destination Set to the Tags an Exit must carry. Rules are evaluated on the Bridge, never on the Device.
 _Avoid_: Policy, route, filter
 
+**Abroad Rule**:
+The built-in Rule that sends all of an Abroad Device's traffic to an Exit tagged `IR`, whatever its destination, ahead of every other Rule.
+_Avoid_: Reverse rule, FREEDOM rule
+
 ### Identity
 
 **User**:
@@ -69,6 +81,10 @@ _Avoid_: Account, client, member
 **Device**:
 One WireGuard keypair and the config that carries it, issued to exactly one User. A User with three keypairs has three Devices, even on one phone. Usage is recorded per Device and always belongs to its User, even after the Device is revoked.
 _Avoid_: Peer, client, profile, machine
+
+**Abroad Device**:
+A Device issued for a User outside Iran, whose traffic all leaves through an Exit tagged `IR`. Its kind is fixed when it is issued, and only a User an Admin has allowed may hold one.
+_Avoid_: Reverse Device, Home Device, inbound client
 
 **Admin**:
 A User permitted to manage Users, Invites, Nodes, Links, and Rules. Being an Admin is a permission on a User, not a Role.

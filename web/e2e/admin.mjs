@@ -72,8 +72,11 @@ try {
   await user.getByLabel("Device cap").blur();
   await page.waitForResponse((r) => r.url().endsWith("/v1/admin/users") && r.request().method() === "GET");
   // The abroad permission (ADR 0014).
-  await user.getByLabel("Abroad").check();
-  await page.waitForResponse((r) => r.url().endsWith("/abroad") && r.request().method() === "POST");
+  // The box shows what the Coordinator holds, so it ticks after the reload.
+  await Promise.all([
+    page.waitForResponse((r) => r.url().endsWith("/abroad") && r.request().method() === "POST"),
+    user.getByLabel("Abroad").click(),
+  ]);
   await user.getByLabel("Abroad").and(page.locator(":checked")).waitFor();
   await user.getByRole("button", { name: "Recovery Invite" }).click();
   await page.locator("[data-testid=recovery-link]", { hasText: "/#/invite/" }).waitFor();

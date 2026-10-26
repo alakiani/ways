@@ -76,7 +76,7 @@ func (c *Coordinator) meOf(r *http.Request, acct store.Account, mfa bool) (proto
 		return protocol.Me{}, err
 	}
 	return protocol.Me{ID: acct.ID, Handle: acct.Handle, Admin: acct.Admin, TOTPEnabled: acct.TOTPSecret != "",
-		MFA: mfa, DeviceCap: acct.DeviceCap, DeviceCount: activeCount(devs)}, nil
+		MFA: mfa, DeviceCap: acct.DeviceCap, DeviceCount: activeCount(devs), Abroad: acct.Abroad}, nil
 }
 
 func activeCount(devs []store.UserDevice) int {
@@ -352,13 +352,13 @@ func (c *Coordinator) respondMe(w http.ResponseWriter, r *http.Request, userID s
 
 func (c *Coordinator) deviceInfo(r *http.Request, d store.UserDevice, acct store.Account) protocol.DeviceInfo {
 	quota := c.userQuotaState(r.Context(), acct)
-	state, reason := effectiveState(d.Revoked, acct.Suspended, quota)
+	state, reason := effectiveState(d.Revoked, acct.Suspended, d.Abroad && !acct.Abroad, quota)
 	recent, err := c.store.RecentBytes(r.Context(), d.ID)
 	if err != nil {
 		c.log.Error("recent usage", "device", d.ID, "err", err)
 	}
 	info := protocol.DeviceInfo{ID: d.ID, Name: d.Name, Address: d.Address.String(), CreatedAt: d.CreatedAt,
-		Revoked: d.Revoked, State: string(state), Reason: reason, RecentBytes: recent}
+		Revoked: d.Revoked, Abroad: d.Abroad, State: string(state), Reason: reason, RecentBytes: recent}
 	if state == StateThrottled {
 		info.Rate = quota.rate
 	}
@@ -462,7 +462,11 @@ func (c *Coordinator) issueDevice(w http.ResponseWriter, r *http.Request, replac
 		writeError(w, http.StatusBadRequest, "a Device needs a name of up to 64 characters")
 		return
 	}
-	d, err := c.store.AddDevice(r.Context(), cl.account.ID, req.Name, key.String(), replaces)
+	if req.Abroad && !cl.account.Abroad {
+		writeError(w, http.StatusForbidden, "you may not hold Abroad Devices; an Admin can allow it")
+		return
+	}
+	d, err := c.store.AddDevice(r.Context(), cl.account.ID, req.Name, key.String(), replaces, req.Abroad)
 	switch {
 	case errors.Is(err, store.ErrCapReached):
 		writeError(w, http.StatusConflict, "you already have as many Devices as you may; revoke or replace one")
@@ -490,7 +494,8 @@ func (c *Coordinator) issueDevice(w http.ResponseWriter, r *http.Request, replac
 }
 
 // deviceConfig is what the browser needs to render a Device's config,
-// which reaches whichever Bridge the Bridge Address answers with (ADR 0011).
+// which reaches whichever Bridge the Bridge Address answers with (ADR 0011),
+// or the Abroad Bridge Address for an Abroad Device (ADR 0014).
 func (c *Coordinator) deviceConfig(r *http.Request, d store.UserDevice) (protocol.DeviceConfig, error) {
 	pub, err := c.BridgePublicKey(r.Context())
 	if err != nil {
@@ -501,10 +506,14 @@ func (c *Coordinator) deviceConfig(r *http.Request, d store.UserDevice) (protoco
 		return protocol.DeviceConfig{}, err
 	}
 	resolver, _ := netip.ParsePrefix(b.Address)
+	host := c.BridgeAddress
+	if d.Abroad {
+		host = c.AbroadAddress
+	}
 	cfg := protocol.DeviceConfig{
 		Address: netip.PrefixFrom(d.Address, 32).String(), IPv6Placeholder: IPv6Placeholder,
 		DNS: resolver.Addr().String(), BridgePublicKey: pub, AllowedIPs: []string{"0.0.0.0/0", "::/0"},
-		Endpoint: protocol.Endpoint{Host: c.BridgeAddress, Port: int(b.ListenPort)},
+		Endpoint: protocol.Endpoint{Host: host, Port: int(b.ListenPort)},
 	}
 	return cfg, nil
 }
@@ -584,7 +593,8 @@ func (c *Coordinator) userInfo(r *http.Request, a store.Account) (protocol.UserI
 	q, err := c.store.QuotaStanding(r.Context(), a.ID)
 	u := protocol.UserInfo{Refills: refills, ID: a.ID, Handle: a.Handle, Admin: a.Admin, Suspended: a.Suspended,
 		TOTPEnabled: a.TOTPSecret != "", DeviceCap: a.DeviceCap, DeviceCount: activeCount(devs),
-		PeriodBytes: q.Usage, PeriodRemedies: q.Remedies, Quota: a.Quota, RenewalDay: q.RenewalDay, RenewsAt: q.Period.End, RunningOut: protocol.RunningOutBlock}
+		PeriodBytes: q.Usage, PeriodRemedies: q.Remedies, Quota: a.Quota, RenewalDay: q.RenewalDay, RenewsAt: q.Period.End, RunningOut: protocol.RunningOutBlock,
+		Abroad: a.Abroad}
 	if a.SlowRate > 0 {
 		u.RunningOut, u.Rate = protocol.RunningOutSlow, a.SlowRate
 	}
@@ -667,6 +677,20 @@ func (c *Coordinator) adminSetCap(w http.ResponseWriter, r *http.Request) {
 	}
 	// Lowering the cap keeps existing Devices; it only stops new ones.
 	c.afterUserChange(w, r, a.ID, c.store.SetDeviceCap(r.Context(), a.ID, req.DeviceCap))
+}
+
+// adminSetAbroad gives a User the abroad permission or takes it away; the
+// next snapshots admit or cut off their Abroad Devices (ADR 0014).
+func (c *Coordinator) adminSetAbroad(w http.ResponseWriter, r *http.Request) {
+	a, ok := c.target(w, r)
+	if !ok {
+		return
+	}
+	var req protocol.SetAbroad
+	if !decode(w, r, &req) {
+		return
+	}
+	c.afterUserChange(w, r, a.ID, c.store.SetUserAbroad(r.Context(), a.ID, req.Abroad))
 }
 
 func (c *Coordinator) adminSetQuota(w http.ResponseWriter, r *http.Request) {

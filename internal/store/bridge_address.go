@@ -2,15 +2,24 @@ package store
 
 import "context"
 
-// AddressMember is a Bridge the Bridge Address's record holds (ADR 0011).
+// Record names one of the two Bridge Addresses' records: the Bridge
+// Address's (ADR 0011) or the Abroad Bridge Address's (ADR 0014).
+type Record string
+
+const (
+	BridgeRecord Record = "bridge_address"
+	AbroadRecord Record = "abroad_address"
+)
+
+// AddressMember is a Bridge a Bridge Address's record holds.
 type AddressMember struct {
 	NodeID string
 	Joined int64 // Unix time it joined
 }
 
-// BridgeAddress returns the Bridges the Bridge Address holds, by Node id.
-func (s *Store) BridgeAddress(ctx context.Context) ([]AddressMember, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT node_id, joined_at FROM bridge_address ORDER BY node_id`)
+// AddressMembers returns the Bridges a record holds, by Node id.
+func (s *Store) AddressMembers(ctx context.Context, rec Record) ([]AddressMember, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT node_id, joined_at FROM `+string(rec)+` ORDER BY node_id`)
 	if err != nil {
 		return nil, err
 	}
@@ -26,16 +35,16 @@ func (s *Store) BridgeAddress(ctx context.Context) ([]AddressMember, error) {
 	return out, rows.Err()
 }
 
-// JoinBridgeAddress adds a Bridge to the Bridge Address; one already in it
-// keeps its join time.
-func (s *Store) JoinBridgeAddress(ctx context.Context, nodeID string) error {
-	_, err := s.db.ExecContext(ctx, `INSERT INTO bridge_address (node_id, joined_at) VALUES (?, ?)
+// JoinAddress adds a Bridge to a record; one already in it keeps its join
+// time.
+func (s *Store) JoinAddress(ctx context.Context, rec Record, nodeID string) error {
+	_, err := s.db.ExecContext(ctx, `INSERT INTO `+string(rec)+` (node_id, joined_at) VALUES (?, ?)
 		ON CONFLICT (node_id) DO NOTHING`, nodeID, s.unix())
 	return err
 }
 
-// LeaveBridgeAddress takes a Bridge out of the Bridge Address.
-func (s *Store) LeaveBridgeAddress(ctx context.Context, nodeID string) error {
-	_, err := s.db.ExecContext(ctx, `DELETE FROM bridge_address WHERE node_id = ?`, nodeID)
+// LeaveAddress takes a Bridge out of a record.
+func (s *Store) LeaveAddress(ctx context.Context, rec Record, nodeID string) error {
+	_, err := s.db.ExecContext(ctx, `DELETE FROM `+string(rec)+` WHERE node_id = ?`, nodeID)
 	return err
 }

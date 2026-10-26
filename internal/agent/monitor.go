@@ -191,7 +191,7 @@ func (a *agent) serveMetrics(w http.ResponseWriter, r *http.Request) {
 	if st.Bridge != nil {
 		rules := map[uint64]string{}
 		var defaultRule uint64
-		for _, r := range st.Bridge.Rules {
+		for _, r := range st.Bridge.AllRules() {
 			rules[r.ID], defaultRule = r.Name, r.ID
 		}
 		for _, rh := range h.Paths {

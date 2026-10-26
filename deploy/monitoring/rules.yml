@@ -59,6 +59,32 @@ groups:
           severity: critical
         annotations:
           summary: "The Bridge Address holds only one Bridge"
+      - alert: AbroadBridgeRemovedFromAbroadAddress
+        expr: "ways_abroad_address_member == 0"
+        labels:
+          severity: warning
+        annotations:
+          summary: "Abroad Bridge {{ $labels.node }} is out of the Abroad Bridge Address"
+      - alert: AbroadBridgeReturnedToAbroadAddress
+        expr: "increase(ways_abroad_address_joins_total[10m]) > 0"
+        labels:
+          severity: info
+        annotations:
+          summary: "An Abroad Bridge joined the Abroad Bridge Address"
+      - alert: AbroadAddressDownToOneBridge
+        expr: "ways_abroad_address_members == 1 and ways_abroad_bridges > 1"
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "The Abroad Bridge Address holds only one Abroad Bridge"
+      - alert: NoEligibleAbroadBridge
+        expr: "ways_abroad_address_eligible_bridges == 0 and ways_abroad_bridges > 0"
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "No Abroad Bridge can carry Abroad Devices to a domestic Exit"
       - alert: ArvanCloudDNSFailing
         expr: "ways_arvan_consecutive_failures >= 3"
         labels:

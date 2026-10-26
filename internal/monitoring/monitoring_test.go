@@ -16,11 +16,12 @@ import (
 
 var update = flag.Bool("update", false, "rewrite deploy/monitoring from this package")
 
-// The alert table of ADR 0006 as ADR 0011 amends it, by the names the
-// rules give its rows.
+// The alert table of ADR 0006 as ADRs 0011 and 0014 amend it, by the names
+// the rules give its rows.
 var alertTable = []string{
 	"NodeUnreachable", "CoordinatorUnreachableFromNode", "LinkDown", "BridgeHasNoDefaultPath", "PathFlapping",
 	"BridgeRemovedFromBridgeAddress", "BridgeReturnedToBridgeAddress", "BridgeAddressDownToOneBridge", "ArvanCloudDNSFailing",
+	"AbroadBridgeRemovedFromAbroadAddress", "AbroadBridgeReturnedToAbroadAddress", "AbroadAddressDownToOneBridge", "NoEligibleAbroadBridge",
 	"ProbeFailing", "CertificateOrTokenExpiring", "ClockSkew", "CIDRRefresh", "BackupStale", "MeteringBacklog",
 	"MeteringMismatch", "SnapshotApplyFailed", "DiskFull", "ConntrackFull",
 }
@@ -98,9 +99,10 @@ func TestMeshDashboard(t *testing.T) {
 	}
 	qs := MeshDashboardQueries()
 	joined := strings.Join(qs, "\n")
-	// ADR 0006's Mesh dashboard: Nodes, the Link grid, Paths, the Bridge Address.
+	// ADR 0006's Mesh dashboard: Nodes, the Link grid, Paths, the Bridge
+	// Address and, since ADR 0014, the Abroad Bridge Address.
 	for _, want := range []string{`up{job="agents"}`, "ways_link_rtt_seconds", "ways_link_loss_ratio", "ways_link_transport",
-		"ways_path_buckets", "ways_bridge_address_member",
+		"ways_path_buckets", "ways_bridge_address_member", "ways_abroad_address_member",
 		// Issue #51: weights and cutoff, throughput with its age, instances.
 		"ways_path_weight", "ways_path_cut_off", "ways_link_throughput_mbps",
 		"ways_link_throughput_measured_timestamp_seconds", "ways_link_throughput_transport", "ways_link_instance_up"} {

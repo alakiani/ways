@@ -31,9 +31,19 @@
       "type": "table",
       "title": "Bridge Address",
       "description": "The Bridges its record holds.",
-      "gridPos": { "x": 12, "y": 0, "w": 12, "h": 5 },
+      "gridPos": { "x": 12, "y": 0, "w": 6, "h": 5 },
       "datasource": { "type": "prometheus", "uid": "ways-prometheus" },
       "targets": [{ "refId": "A", "expr": "ways_bridge_address_member == 1", "format": "table", "instant": true }],
+      "transformations": [{ "id": "organize", "options": { "excludeByName": { "Time": true, "Value": true, "__name__": true, "instance": true, "job": true } } }]
+    },
+    {
+      "id": 20,
+      "type": "table",
+      "title": "Abroad Bridge Address",
+      "description": "The Abroad Bridges its record holds (ADR 0014).",
+      "gridPos": { "x": 18, "y": 0, "w": 6, "h": 5 },
+      "datasource": { "type": "prometheus", "uid": "ways-prometheus" },
+      "targets": [{ "refId": "A", "expr": "ways_abroad_address_member == 1", "format": "table", "instant": true }],
       "transformations": [{ "id": "organize", "options": { "excludeByName": { "Time": true, "Value": true, "__name__": true, "instance": true, "job": true } } }]
     },
     {

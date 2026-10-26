@@ -86,8 +86,8 @@ func TestOnlyTheIRRuleIsEditable(t *testing.T) {
 		t.Fatal(err)
 	}
 	rules, _ := s.Rules(ctx)
-	if rules[0].Fallback != "drop" || len(rules[0].RequiredTags) != 2 {
-		t.Errorf("IR rule = %+v", rules[0])
+	if rules[1].Fallback != "drop" || len(rules[1].RequiredTags) != 2 { // after the Abroad Rule
+		t.Errorf("IR rule = %+v", rules[1])
 	}
 	if err := s.UpdateRule(ctx, 2, nil, "next"); !errors.Is(err, store.ErrNotFound) {
 		t.Error("the default Rule changed")

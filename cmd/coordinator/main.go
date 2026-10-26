@@ -67,6 +67,7 @@ func serve(args []string, log *slog.Logger) error {
 	feedURL := fs.String("feed-url", irfeed.DefaultURL, "the IR feed (list.rsc)")
 	ripeURL := fs.String("ripestat-url", irfeed.DefaultRIPEstatURL, "RIPEstat's list for the cross-check; empty to skip it")
 	bridgeAddress := fs.String("bridge-address", coordinator.DefaultBridgeAddress, "the Bridge Address: the hostname in every Device's config, in -arvan-zone; changing it affects only configs issued afterwards")
+	abroadAddress := fs.String("abroad-address", coordinator.DefaultAbroadAddress, "the Abroad Bridge Address: the hostname in every Abroad Device's config, in -arvan-zone; changing it affects only configs issued afterwards")
 	arvanKeyFile := fs.String("arvan-api-key-file", "", "file holding the ArvanCloud API key that edits the Bridge Address's record; unset leaves the record alone")
 	arvanZone := fs.String("arvan-zone", "wayfinder.ir", "the ArvanCloud zone holding the Bridge Address")
 	arvanTTL := fs.Int("arvan-ttl", 120, "TTL of the Bridge Address's record, in seconds: the lowest ArvanCloud allows")
@@ -103,6 +104,7 @@ func serve(args []string, log *slog.Logger) error {
 	c := coordinator.New(s, authority, log)
 	c.PanelURL = *panelURL
 	c.BridgeAddress = *bridgeAddress
+	c.AbroadAddress = *abroadAddress
 	c.GrafanaURL = *grafanaURL
 	c.FeedURL, c.RIPEstatURL = *feedURL, *ripeURL
 	c.SecureCookies = *adminCert != "" // plain HTTP is for development only

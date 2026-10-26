@@ -25,16 +25,18 @@ type Account struct {
 	PasswordHash string
 	TOTPSecret   string // empty unless TOTP is on
 	TOTPPending  string
+	// Abroad is the permission to hold Abroad Devices (ADR 0014).
+	Abroad bool
 	QuotaSetting
 }
 
 const accountColumns = `id, handle, suspended_at IS NOT NULL, is_admin, device_cap, coalesce(password_hash, ''),
-	coalesce(totp_secret, ''), coalesce(totp_pending, ''), quota, coalesce(slow_rate, 0)`
+	coalesce(totp_secret, ''), coalesce(totp_pending, ''), abroad, quota, coalesce(slow_rate, 0)`
 
 func scanAccount(row interface{ Scan(...any) error }) (Account, error) {
 	var a Account
 	err := row.Scan(&a.ID, &a.Handle, &a.Suspended, &a.Admin, &a.DeviceCap, &a.PasswordHash, &a.TOTPSecret, &a.TOTPPending,
-		&a.Quota, &a.SlowRate)
+		&a.Abroad, &a.Quota, &a.SlowRate)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Account{}, ErrNotFound
 	}
@@ -303,15 +305,16 @@ type UserDevice struct {
 	Address   netip.Addr
 	CreatedAt time.Time
 	Revoked   bool
+	Abroad    bool // an Abroad Device (ADR 0014)
 }
 
-const userDeviceColumns = `rowid, id, coalesce(user_id, ''), name, address, created_at, revoked_at IS NOT NULL`
+const userDeviceColumns = `rowid, id, coalesce(user_id, ''), name, address, created_at, revoked_at IS NOT NULL, abroad`
 
 func scanUserDevice(row interface{ Scan(...any) error }) (UserDevice, error) {
 	var d UserDevice
 	var addr string
 	var created int64
-	err := row.Scan(&d.Seq, &d.ID, &d.UserID, &d.Name, &addr, &created, &d.Revoked)
+	err := row.Scan(&d.Seq, &d.ID, &d.UserID, &d.Name, &addr, &created, &d.Revoked, &d.Abroad)
 	if errors.Is(err, sql.ErrNoRows) {
 		return UserDevice{}, ErrNotFound
 	}
@@ -345,10 +348,11 @@ func (s *Store) UserDevice(ctx context.Context, id string) (UserDevice, error) {
 	return scanUserDevice(s.db.QueryRowContext(ctx, `SELECT `+userDeviceColumns+` FROM devices WHERE id = ?`, id))
 }
 
-// AddDevice creates a Device for a User within their Device cap. If
-// replaces is set, that Device of the same User is revoked in the same
-// transaction, so a replacement never needs room under the cap.
-func (s *Store) AddDevice(ctx context.Context, userID, name, publicKey, replaces string) (UserDevice, error) {
+// AddDevice creates a Device for a User within their Device cap, an Abroad
+// Device if abroad is set. If replaces is set, that Device of the same User
+// is revoked in the same transaction, so a replacement never needs room
+// under the cap; it may be of either kind.
+func (s *Store) AddDevice(ctx context.Context, userID, name, publicKey, replaces string, abroad bool) (UserDevice, error) {
 	var id string
 	err := s.tx(ctx, func(tx *sql.Tx) error {
 		if replaces != "" {
@@ -378,13 +382,13 @@ func (s *Store) AddDevice(ctx context.Context, userID, name, publicKey, replaces
 		if used > 0 {
 			return ErrKeyInUse
 		}
-		addr, err := nextDeviceAddr(tx)
+		addr, err := nextDeviceAddr(tx, abroad)
 		if err != nil {
 			return err
 		}
 		id = "dv_" + randomHex(8)
-		_, err = tx.Exec(`INSERT INTO devices (id, user_id, name, public_key, address, created_at) VALUES (?, ?, ?, ?, ?, ?)`,
-			id, userID, name, publicKey, addr.String(), s.unix())
+		_, err = tx.Exec(`INSERT INTO devices (id, user_id, name, public_key, address, created_at, abroad) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+			id, userID, name, publicKey, addr.String(), s.unix(), abroad)
 		return err
 	})
 	if err != nil {
@@ -393,9 +397,10 @@ func (s *Store) AddDevice(ctx context.Context, userID, name, publicKey, replaces
 	return s.UserDevice(ctx, id)
 }
 
-// nextDeviceAddr is the lowest pool address no Device row holds, skipping
-// the network address and the resolver's.
-func nextDeviceAddr(tx *sql.Tx) (netip.Addr, error) {
+// nextDeviceAddr is the lowest address no Device row holds in the ordinary
+// pool, skipping the network address and the resolver's, or in the Abroad
+// pool, skipping its first address.
+func nextDeviceAddr(tx *sql.Tx, abroad bool) (netip.Addr, error) {
 	rows, err := tx.Query(`SELECT address FROM devices`)
 	if err != nil {
 		return netip.Addr{}, err
@@ -410,12 +415,15 @@ func nextDeviceAddr(tx *sql.Tx) (netip.Addr, error) {
 		used[netip.MustParseAddr(a)] = true
 	}
 	rows.Close()
-	a := DevicePool.Addr().Next().Next()
+	pool, a := OrdinaryPool, OrdinaryPool.Addr().Next().Next()
+	if abroad {
+		pool, a = AbroadPool, AbroadPool.Addr().Next()
+	}
 	for used[a] {
 		a = a.Next()
 	}
-	if !DevicePool.Contains(a) {
-		return netip.Addr{}, errors.New("device pool exhausted")
+	if !pool.Contains(a) {
+		return netip.Addr{}, fmt.Errorf("device pool %s exhausted", pool)
 	}
 	return a, nil
 }

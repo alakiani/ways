@@ -14,7 +14,7 @@ import (
 func quotaFixture(t *testing.T) (*store.Store, *clock, string, store.UserDevice, store.UserDevice) {
 	t.Helper()
 	s, c, d1, user := usageFixture(t)
-	d2, err := s.AddDevice(ctx, user, "laptop", "k2", "")
+	d2, err := s.AddDevice(ctx, user, "laptop", "k2", "", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -57,7 +57,7 @@ func TestPeriodUsageSumsAllDevicesRevokedIncludedAcrossAMonth(t *testing.T) {
 
 func TestUsageHistorySplitsRecentPeriodsByDevice(t *testing.T) {
 	s, c, user, d1, d2 := quotaFixture(t)
-	d3, _ := s.AddDevice(ctx, user, "tablet", "k3", "")
+	d3, _ := s.AddDevice(ctx, user, "tablet", "k3", "", false)
 	s.PutUsage(ctx, "nd_b1", []protocol.UsageBucket{
 		bucket(day(2026, 10, 20), d1.Address.String(), "nd_x1", 5, 5),
 		bucket(day(2026, 10, 21), d2.Address.String(), "nd_x1", 1, 1),

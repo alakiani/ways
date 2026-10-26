@@ -18,7 +18,7 @@ Failures of a Bridge's Links or Exits that the mesh can route around (ADR 0004) 
 
 > Superseded by [ADR 0011](0011-bridge-address.md): one Bridge Address replaces the three slots and the Backup configs.
 
-- **Three slots, all domestic:** `a.wayfinder.ir`, `b.wayfinder.ir`, `c.wayfinder.ir`. No abroad Bridge ever faces Devices; abroad Nodes holding the Bridge Role serve only as transit inside the mesh. **Accepted cost:** if every domestic Bridge is unreachable, Devices have no fallback.
+- **Three slots, all domestic:** `a.wayfinder.ir`, `b.wayfinder.ir`, `c.wayfinder.ir`. No abroad Bridge ever faces Devices; abroad Nodes holding the Bridge Role serve only as transit inside the mesh. *(Amended by [ADR 0014](0014-abroad-devices.md): Abroad Bridges face Abroad Devices through their own Abroad Bridge Address.)* **Accepted cost:** if every domestic Bridge is unreachable, Devices have no fallback.
 - **Slots are global, not per Device.** Each Device resolves the same three names before its tunnel is up, through the ISP's plaintext DNS. Per-Device names would tag a Device to the filter on every connect.
 - **Rotation balances load.** At issuance, a Device's configs are labelled Main, Backup 1, and Backup 2, rotated across the slots by Device id (Main is slot `id mod 3`, followed by the next two). Labels are fixed once issued; rebalancing later is done by re-pointing slots.
 - **Assignment:** the slots point at different domestic Bridges whenever enough are eligible. With two domestic Bridges, `c` shares one with `a` or `b` until a third exists. When a Bridge fails, its slots move to surviving Bridges, so several slots may share one.
@@ -38,7 +38,7 @@ Failures of a Bridge's Links or Exits that the mesh can route around (ADR 0004) 
 
 - **Every Bridge presents one WireGuard keypair**, so a config works on whichever Bridge its slot points at, and all Bridges accept every non-blocked Device (ADR 0004).
 - **Every Bridge listens for Devices on one UDP port**, `61873` by default, held by the Coordinator and written into every config. It is outside the 10000–60000 range Link instances draw from (ADR 0007), so the two never collide on a Bridge, and avoids `51820`, the WireGuard default. Changing it affects only configs issued afterwards. *(Decided in [MVP 04](https://github.com/alakiani/ways/issues/20).)*
-- **The private key is held by the Coordinator and shipped only in Bridge snapshots.** Exits never receive it. It is included in the age-encrypted nightly backup.
+- **The private key is held by the Coordinator and shipped only in Bridge snapshots.** Exits never receive it. *(Since [ADR 0014](0014-abroad-devices.md), Abroad Bridges receive it too.)* It is included in the age-encrypted nightly backup.
 - **Why the Coordinator holds it:** portability. Bridges can be added or rebuilt without the operator's laptop. The rejected alternative was to generate the key on the laptop and distribute it by Ansible only.
 - **Accepted risk:** whoever seizes the domestic Coordinator gets the key that impersonates every Bridge. If ArvanCloud is compelled to re-point the slot records as well, a state actor could intercept Users' traffic before it enters a Link. A seized Bridge leaks the same key.
 - **Rotation** means every User must Replace every Device. It is an emergency procedure, announced with a panel banner.

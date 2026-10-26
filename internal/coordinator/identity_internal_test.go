@@ -601,3 +601,56 @@ func TestDeviceUsage(t *testing.T) {
 		}
 	}
 }
+
+// An Abroad Device is issued only to a User an Admin has given the
+// permission; its config reaches the Abroad Bridge Address, and taking the
+// permission away blocks it without revoking it (ADR 0014).
+func TestAbroadDevices(t *testing.T) {
+	a := newAPI(t)
+	admin := a.admin()
+	cl, me := a.user("maryam")
+	if me.Abroad {
+		t.Error("a new User has the abroad permission")
+	}
+	cl.must(403, "POST", "/v1/me/devices", protocol.NewDevice{Name: "phone abroad", PublicKey: pubKey(t), Abroad: true}, nil)
+
+	var u protocol.UserInfo
+	admin.must(200, "POST", "/v1/admin/users/"+me.ID+"/abroad", protocol.SetAbroad{Abroad: true}, &u)
+	if !u.Abroad {
+		t.Errorf("user = %+v", u)
+	}
+	var got protocol.Me
+	cl.must(200, "GET", "/v1/me", nil, &got)
+	if !got.Abroad {
+		t.Error("/v1/me does not show the permission")
+	}
+
+	var issued protocol.IssuedDevice
+	cl.must(200, "POST", "/v1/me/devices", protocol.NewDevice{Name: "phone abroad", PublicKey: pubKey(t), Abroad: true}, &issued)
+	if !issued.Device.Abroad || !strings.HasPrefix(issued.Device.Address, "10.77.128.") || issued.Device.State != "active" {
+		t.Errorf("device = %+v", issued.Device)
+	}
+	if issued.Config.Endpoint != (protocol.Endpoint{Host: "abroad.wayfinder.ir", Port: DefaultDevicePort}) || issued.Config.DNS != "10.77.0.1" {
+		t.Errorf("config = %+v", issued.Config)
+	}
+	// Replacing it may change its kind.
+	var ordinary protocol.IssuedDevice
+	cl.must(200, "POST", "/v1/me/devices/"+issued.Device.ID+"/replace", protocol.NewDevice{Name: "phone", PublicKey: pubKey(t)}, &ordinary)
+	if ordinary.Device.Abroad || ordinary.Config.Endpoint.Host != "bridge.wayfinder.ir" {
+		t.Errorf("replacement = %+v, %+v", ordinary.Device, ordinary.Config.Endpoint)
+	}
+	cl.must(200, "POST", "/v1/me/devices", protocol.NewDevice{Name: "laptop abroad", PublicKey: pubKey(t), Abroad: true}, &issued)
+
+	admin.must(200, "POST", "/v1/admin/users/"+me.ID+"/abroad", protocol.SetAbroad{Abroad: false}, &u)
+	var list []protocol.DeviceInfo
+	cl.must(200, "GET", "/v1/me/devices", nil, &list)
+	for _, d := range list {
+		switch {
+		case d.ID == issued.Device.ID && (d.Revoked || d.State != "blocked" || d.Reason != "abroad not allowed"):
+			t.Errorf("Abroad Device without the permission = %+v", d)
+		case d.ID == ordinary.Device.ID && d.State != "active":
+			t.Errorf("ordinary Device = %+v", d)
+		}
+	}
+	cl.must(403, "POST", "/v1/me/devices", protocol.NewDevice{Name: "tablet abroad", PublicKey: pubKey(t), Abroad: true}, nil)
+}

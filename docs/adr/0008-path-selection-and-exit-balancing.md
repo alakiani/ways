@@ -15,7 +15,7 @@ Every Device's international traffic leaves through an Exit abroad, and the mesh
 For each (Bridge, Rule), the Agent works out the candidates from its snapshot (Links, each far end's Roles and Tags, Rules):
 
 - **Direct:** every Exit that carries the Rule's required Tags and is reachable over one Link.
-- **Local:** the Bridge's own NIC, when it is a dual-role Node tagged `IR` and the Rule is the IR Rule (a zero-Link Path, ADR 0004).
+- **Local:** the Bridge's own NIC, when it is a dual-role Node tagged `IR` and the Rule is the IR Rule (a zero-Link Path, ADR 0004). *(Amended by [ADR 0014](0014-abroad-devices.md): whenever the Bridge is also an Exit whose Tags satisfy the Rule, so an Abroad Bridge carries ordinary Devices' default-Rule traffic itself.)*
 - **Transit:** every neighbouring Bridge.
 
 The Coordinator runs the same function only to show "why" in the panel and to judge Endpoint Slot eligibility. It pushes the scoring parameters, never Path lists. A Coordinator outage changes nothing: the topology is in the persisted snapshot.

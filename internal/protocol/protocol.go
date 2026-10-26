@@ -73,6 +73,14 @@ type BridgeState struct {
 	Devices []Device `json:"devices"`
 	// Rules in priority order, the default Rule last.
 	Rules []Rule `json:"rules"`
+	// AbroadRule is the Abroad Rule (ADR 0014), which goes ahead of every
+	// Rule. It travels apart from Rules so that an Agent from before it,
+	// which ignores fields it does not know, never reads it as "everything,
+	// requires IR, first" and sends every Device out of Iran.
+	AbroadRule *Rule `json:"abroad_rule,omitempty"`
+	// AbroadUpstreams are the domestic resolvers Abroad Devices' lookups
+	// go to, as plain DNS through the Abroad Rule (ADR 0014).
+	AbroadUpstreams []string `json:"abroad_upstreams,omitempty"`
 	// Scoring is how the Bridge ranks and balances candidates (ADR 0008).
 	Scoring Scoring `json:"scoring"`
 }
@@ -96,6 +104,15 @@ type Scoring struct {
 	ThroughputJitterSec int   `json:"throughput_jitter_s,omitempty"`
 	ThroughputMaxBytes  int64 `json:"throughput_max_bytes,omitempty"`
 	ThroughputMaxSec    int   `json:"throughput_max_s,omitempty"`
+}
+
+// AllRules are the Rules in the order a Bridge matches them: the Abroad
+// Rule, if any, then Rules, the default Rule last.
+func (b *BridgeState) AllRules() []Rule {
+	if b.AbroadRule == nil {
+		return b.Rules
+	}
+	return append([]Rule{*b.AbroadRule}, b.Rules...)
 }
 
 // DefaultScoring is ADR 0008's.
@@ -139,8 +156,11 @@ type Rule struct {
 	Name     string `json:"name"`
 	Priority int    `json:"priority"`
 	// SetHash names the Destination Set's content; fetch it from
-	// GET /v1/sets/{hash}.
+	// GET /v1/sets/{hash}. A Rule with a Source has none.
 	SetHash string `json:"set_hash"`
+	// Source, set on the Abroad Rule only, is the prefix of the Devices it
+	// takes, whatever their destination (ADR 0014).
+	Source string `json:"source,omitempty"`
 	// RequiredTags are ANDed; "!IR" means the Exit must not carry IR.
 	RequiredTags []string `json:"required_tags"`
 	Fallback     Fallback `json:"fallback"`

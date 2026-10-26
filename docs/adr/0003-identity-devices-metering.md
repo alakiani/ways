@@ -21,7 +21,7 @@ Device keypairs are generated in the User's browser, so no WAYS server ever hold
 - **Who creates them:** Users, self-service, up to a per-User **Device cap** set by an Admin (default 3). This is the only quota in phase one.
 - **Key generation happens in the browser.** The panel page generates an X25519 keypair and submits only the public key. It then renders the `.conf` file and QR code locally. Closing the page is the one-time display: the private key never reaches the Coordinator or any Node, so even a seized and tampered Coordinator cannot log keys. No preshared key is used, since it would be a secret held by the Coordinator and every Bridge.
 - **Tunnel addresses:**
-  - Each Device gets one IPv4 `/32` from a private pool (such as `10.77.0.0/16`), stable for its lifetime and the same on every Bridge.
+  - Each Device gets one IPv4 `/32` from a private pool (such as `10.77.0.0/16`), stable for its lifetime and the same on every Bridge. *(Amended by [ADR 0014](0014-abroad-devices.md): ordinary Devices take `10.77.0.0/17` and Abroad Devices `10.77.128.0/17`.)*
   - An address returns to the pool only once that Device's usage data has expired, so metering never mixes two Devices.
 - **IPv6 is black-holed, not supported.** Each config claims `::/0` alongside `0.0.0.0/0` and carries one placeholder ULA `/128`. Bridges drop all IPv6. Apps on dual-stack mobile networks (MCI, Irancell) therefore fall back to IPv4 inside the tunnel instead of leaking IPv6 around it. Nothing routes IPv6 anywhere.
 - **Lifecycle:**
@@ -47,6 +47,6 @@ _[ADR 0010](0010-per-user-usage-and-quota.md) fills these hooks with a per-User 
 
 - **Every Device has an effective state:** `active`, `blocked`, or `throttled(rate)`, plus a `reason`. Snapshots carry it, and Bridges enforce it.
 - **A pure policy function in the Coordinator** derives that state from User status, Device status, and the per-User daily and monthly usage totals.
-- **Phase one ships a single policy:** a suspended User or a revoked Device is `blocked`, and everything else is `active`.
+- **Phase one ships a single policy:** a suspended User or a revoked Device is `blocked`, and everything else is `active`. *(Amended by [ADR 0014](0014-abroad-devices.md): an Abroad Device whose User lacks the abroad permission is also `blocked`.)*
 - **Room for later:** `throttled` exists in the model, but Bridges implement it only when a quota feature needs it.
 - **Accepted limit:** usage arrives hourly, so a future quota may overshoot by up to an hour of traffic.

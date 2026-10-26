@@ -113,7 +113,7 @@ func TestAdminPanel(t *testing.T) {
 			}
 		}
 		key, _ := wgtypes.GeneratePrivateKey()
-		dev, err := co.store.AddDevice(ctx, acct.ID, "phone", key.PublicKey().String(), "")
+		dev, err := co.store.AddDevice(ctx, acct.ID, "phone", key.PublicKey().String(), "", false)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -144,8 +144,8 @@ func TestAdminPanel(t *testing.T) {
 
 	// What the browser did is in the Coordinator.
 	maryam, err := co.store.AccountByHandle(ctx, "maryam")
-	if err != nil || maryam.Suspended || maryam.DeviceCap != 5 {
-		t.Errorf("maryam = %+v, %v; want resumed with a cap of 5", maryam, err)
+	if err != nil || maryam.Suspended || maryam.DeviceCap != 5 || !maryam.Abroad {
+		t.Errorf("maryam = %+v, %v; want resumed with a cap of 5 and the abroad permission", maryam, err)
 	}
 	if _, err := co.store.AccountByHandle(ctx, "reza"); err == nil {
 		t.Error("reza was not deleted")
@@ -201,8 +201,8 @@ func TestAdminPanel(t *testing.T) {
 		t.Errorf("transports = %v, want all three back on", ts)
 	}
 	rules, _ := co.store.Rules(ctx)
-	if rules[0].Fallback != protocol.FallbackNext {
-		t.Errorf("IR fallback = %s, want next", rules[0].Fallback)
+	if rules[1].Fallback != protocol.FallbackNext { // after the Abroad Rule
+		t.Errorf("IR fallback = %s, want next", rules[1].Fallback)
 	}
 	sets, _ := co.store.DestinationSets(ctx)
 	if adds := prefixStrings(sets[0].Additions); !slices.Contains(adds, "185.0.0.0/24") {

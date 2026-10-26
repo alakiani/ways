@@ -180,10 +180,37 @@ func (c *Coordinator) writeMetrics(ctx context.Context, m *metrics.Writer) error
 	m.Gauge("ways_bridge_address_members", "Bridges in the Bridge Address's record.", float64(members))
 	m.Counter("ways_bridge_address_joins_total", "Bridges that joined the Bridge Address's record.", float64(addr.Joins))
 	m.Counter("ways_bridge_address_removals_total", "Bridges removed from the Bridge Address's record.", float64(addr.Removals))
-	c.address.mu.Lock()
-	dnsFailures := c.address.dnsFailures
-	c.address.mu.Unlock()
-	m.Gauge("ways_arvan_consecutive_failures", "ArvanCloud DNS API calls failed in a row.", float64(dnsFailures))
+
+	// The Abroad Bridge Address (ADR 0014).
+	abroad, err := c.AbroadAddressStatus(ctx)
+	if err != nil {
+		return err
+	}
+	eligible, members = 0, 0
+	for _, b := range abroad.Bridges {
+		m.Bool("ways_abroad_address_member", "1 while the Abroad Bridge is in the Abroad Bridge Address's record.", b.InRecord, "node", b.Name)
+		m.Bool("ways_abroad_bridge_eligible", "1 while the Abroad Bridge may be in the Abroad Bridge Address.", b.Eligible, "node", b.Name)
+		if b.InRecord {
+			members++
+		}
+		if b.Eligible {
+			eligible++
+		}
+	}
+	m.Gauge("ways_abroad_bridges", "Abroad Bridges: Bridges not tagged IR.", float64(len(abroad.Bridges)))
+	m.Gauge("ways_abroad_address_eligible_bridges", "Abroad Bridges that may be in the Abroad Bridge Address.", float64(eligible))
+	m.Gauge("ways_abroad_address_members", "Abroad Bridges in the Abroad Bridge Address's record.", float64(members))
+	m.Counter("ways_abroad_address_joins_total", "Abroad Bridges that joined the Abroad Bridge Address's record.", float64(abroad.Joins))
+	m.Counter("ways_abroad_address_removals_total", "Abroad Bridges removed from the Abroad Bridge Address's record.", float64(abroad.Removals))
+
+	// One ArvanCloud account serves both records.
+	dnsFailures := 0
+	for _, s := range []*addressState{&c.address, &c.abroad} {
+		s.mu.Lock()
+		dnsFailures = max(dnsFailures, s.dnsFailures)
+		s.mu.Unlock()
+	}
+	m.Gauge("ways_arvan_consecutive_failures", "ArvanCloud DNS API calls failed in a row, for either Bridge Address.", float64(dnsFailures))
 
 	// The IR feed (ADR 0004).
 	sets, err := c.store.DestinationSets(ctx)

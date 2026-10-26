@@ -66,6 +66,8 @@ A consequence: per-Device anomalies, such as one Device using unusually much, ar
 | Snapshot apply failed | each event | warning |
 | Disk / conntrack | > 85% / > 80% | warning |
 
+*(Amended by [ADR 0014](0014-abroad-devices.md): "Abroad Bridge removed from / returned to the Abroad Bridge Address" (warning / info), "Abroad Bridge Address down to one Bridge" (2 min, warning), and "No eligible Abroad Bridge" (2 min, critical).)*
+
 ## Delivering alerts
 
 Telegram is blocked domestically, so the Coordinator VM cannot reach it directly.

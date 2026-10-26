@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Alert, Badge, Code, Group, Paper, Stack, Table, Text, Title } from "@mantine/core";
 import { IconAlertTriangle, IconDatabaseExport, IconRss } from "@tabler/icons-react";
 import { api } from "../api/client";
-import { ago, bytes, type Overview } from "./api";
+import { ago, bytes, type AddressStatus, type Overview } from "./api";
 import { ListTable, Screen } from "./ui";
 
 // The status board (variant A in the prototype): Node tiles, a Link
@@ -18,7 +18,6 @@ export function OverviewScreen() {
   if (!o) return null;
   const names = o.nodes.map((n) => n.name);
   const link = (a: string, b: string) => o.links.find((l) => (l.a === a && l.b === b) || (l.a === b && l.b === a));
-  const ba = o.bridge_address;
 
   return (
     <Screen title="Overview" about="Refreshes every 5 seconds.">
@@ -115,52 +114,9 @@ export function OverviewScreen() {
         </Table.Tbody>
       </ListTable>
 
-      <Group gap="xs">
-        <Title order={2} size="h4">
-          Bridge Address
-        </Title>
-        <Code dir="ltr">{ba.host}</Code>
-      </Group>
-      {!ba.published && (
-        <Alert color="orange" variant="light">
-          The record has not been updated since the Coordinator started.
-        </Alert>
-      )}
-      <ListTable data-testid="bridge-address">
-        <Table.Thead>
-          <Table.Tr>
-            <Table.Th>Bridge</Table.Th>
-            <Table.Th>Address</Table.Th>
-            <Table.Th>Record</Table.Th>
-            <Table.Th>Eligible</Table.Th>
-            <Table.Th>Probe</Table.Th>
-          </Table.Tr>
-        </Table.Thead>
-        <Table.Tbody>
-          {ba.bridges.map((b) => (
-            <Table.Tr key={b.name}>
-              <Table.Th>{b.name}</Table.Th>
-              <Table.Td>{b.addr ?? "no address yet"}</Table.Td>
-              <Table.Td>
-                <Badge variant="light" color={b.in_record ? "green" : "gray"} tt="none">
-                  {b.in_record ? `in the record since ${ago(b.joined)}` : "out of the record"}
-                </Badge>
-              </Table.Td>
-              <Table.Td>
-                <Badge variant="light" color={b.eligible ? "green" : "red"} tt="none">
-                  {b.eligible ? "eligible" : (b.reasons ?? ["not probed yet"]).join(", ")}
-                </Badge>
-              </Table.Td>
-              <Table.Td>
-                probe {b.probe ? (b.probe.ok ? "passing" : "failing") : "pending"} {b.probe && ago(b.probe.at)}
-              </Table.Td>
-            </Table.Tr>
-          ))}
-        </Table.Tbody>
-      </ListTable>
-      <Text fz="sm" c="dimmed">
-        Since the Coordinator started: {ba.joins} joined, {ba.removals} removed.
-      </Text>
+      <AddressSection title="Bridge Address" status={o.bridge_address} testid="bridge-address" probed />
+      {/* Abroad Devices connect here (ADR 0014); there is no probe from abroad. */}
+      <AddressSection title="Abroad Bridge Address" status={o.abroad_address} testid="abroad-address" />
 
       <Title order={2} size="h4">
         Coordinator
@@ -198,5 +154,69 @@ export function OverviewScreen() {
         </Stack>
       </Paper>
     </Screen>
+  );
+}
+
+// One Bridge Address: the Bridges its record holds and how each is judged.
+function AddressSection({ title, status: ba, testid, probed = false }: { title: string; status: AddressStatus; testid: string; probed?: boolean }) {
+  return (
+    <>
+      <Group gap="xs">
+        <Title order={2} size="h4">
+          {title}
+        </Title>
+        <Code dir="ltr">{ba.host}</Code>
+      </Group>
+      {ba.bridges.length === 0 ? (
+        <Text fz="sm" c="dimmed" data-testid={testid}>
+          No Bridges for it yet.
+        </Text>
+      ) : (
+        <>
+          {!ba.published && (
+            <Alert color="orange" variant="light">
+              The record has not been updated since the Coordinator started.
+            </Alert>
+          )}
+          <ListTable data-testid={testid}>
+            <Table.Thead>
+              <Table.Tr>
+                <Table.Th>Bridge</Table.Th>
+                <Table.Th>Address</Table.Th>
+                <Table.Th>Record</Table.Th>
+                <Table.Th>Eligible</Table.Th>
+                {probed && <Table.Th>Probe</Table.Th>}
+              </Table.Tr>
+            </Table.Thead>
+            <Table.Tbody>
+              {ba.bridges.map((b) => (
+                <Table.Tr key={b.name}>
+                  <Table.Th>{b.name}</Table.Th>
+                  <Table.Td>{b.addr ?? "no address yet"}</Table.Td>
+                  <Table.Td>
+                    <Badge variant="light" color={b.in_record ? "green" : "gray"} tt="none">
+                      {b.in_record ? `in the record since ${ago(b.joined)}` : "out of the record"}
+                    </Badge>
+                  </Table.Td>
+                  <Table.Td>
+                    <Badge variant="light" color={b.eligible ? "green" : "red"} tt="none">
+                      {b.eligible ? "eligible" : (b.reasons ?? [probed ? "not probed yet" : "not judged yet"]).join(", ")}
+                    </Badge>
+                  </Table.Td>
+                  {probed && (
+                    <Table.Td>
+                      probe {b.probe ? (b.probe.ok ? "passing" : "failing") : "pending"} {b.probe && ago(b.probe.at)}
+                    </Table.Td>
+                  )}
+                </Table.Tr>
+              ))}
+            </Table.Tbody>
+          </ListTable>
+          <Text fz="sm" c="dimmed">
+            Since the Coordinator started: {ba.joins} joined, {ba.removals} removed.
+          </Text>
+        </>
+      )}
+    </>
   );
 }

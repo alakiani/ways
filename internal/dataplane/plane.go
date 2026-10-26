@@ -176,7 +176,15 @@ func (p *Plane) Apply(ctx context.Context, st protocol.State) error {
 		rs.ResolverAddr = addr.Addr().String()
 		rs.Throttles = throttles(b.Devices)
 		dev, tr := p.computePaths()
-		for _, r := range b.Rules {
+		for _, r := range b.AllRules() {
+			if r.Source != "" {
+				src, err := netip.ParsePrefix(r.Source)
+				if err != nil || !src.Addr().Is4() {
+					return fmt.Errorf("rule %s: bad source %q", r.Name, r.Source)
+				}
+				rs.Rules = append(rs.Rules, nftRule{ID: r.ID, Source: src.Masked().String(), Device: dev[r.ID], Transit: tr[r.ID]})
+				continue
+			}
 			prefixes, err := p.set(ctx, r.SetHash)
 			if err != nil {
 				return fmt.Errorf("rule %s: %w", r.Name, err)
@@ -400,7 +408,7 @@ func (p *Plane) computePaths() (dev, tr map[uint64][buckets]string) {
 	var transit []uint32
 	var health []protocol.RuleHealth
 	views := map[uint64][]candidateView{}
-	for _, r := range b.Rules {
+	for _, r := range b.AllRules() {
 		for _, view := range []struct {
 			name    string
 			states  map[uint64]*bucketState
@@ -444,7 +452,7 @@ func (p *Plane) computePaths() (dev, tr map[uint64][buckets]string) {
 			}
 		}
 	}
-	dev, tr = resolve(b.Rules, p.dev), resolve(b.Rules, p.tr)
+	dev, tr = resolve(b.AllRules(), p.dev), resolve(b.AllRules(), p.tr)
 	for i := range health {
 		shares := map[string]int{}
 		for _, k := range dev[health[i].RuleID] {
@@ -491,7 +499,7 @@ func (p *Plane) syncPaths(ctx context.Context) {
 	dev, tr := p.computePaths()
 	var b strings.Builder
 	next := map[string][buckets]string{}
-	for _, r := range p.st.Bridge.Rules {
+	for _, r := range p.st.Bridge.AllRules() {
 		for name, assign := range map[string][buckets]string{fmt.Sprintf("dev_%d", r.ID): dev[r.ID], fmt.Sprintf("tr_%d", r.ID): tr[r.ID]} {
 			b.WriteString(bucketUpdates(name, p.applied[name], assign))
 			next[name] = assign
@@ -595,15 +603,20 @@ func parseCounters(b []byte) ([]counterElem, error) {
 }
 
 // resolverMark is the mark of the resolver's own queries: those of a
-// Device at the resolver's address, in the default Rule. Call with mu held.
-func (p *Plane) resolverMark() uint32 {
+// Device at the resolver's address, in the default Rule, or in the Abroad
+// Rule for an Abroad Device's lookups (ADR 0014). Call with mu held.
+func (p *Plane) resolverMark(abroad bool) uint32 {
 	b := p.st.Bridge
-	if b == nil || len(b.Rules) == 0 {
+	if b == nil || len(b.Rules) == 0 || abroad && b.AbroadRule == nil {
 		return dropMark
+	}
+	rule := b.Rules[len(b.Rules)-1].ID
+	if abroad {
+		rule = b.AbroadRule.ID
 	}
 	addr, _ := netip.ParsePrefix(b.Address)
 	bucket := int(addr.Addr().As4()[3]) % buckets
-	return markFor(p.applied[fmt.Sprintf("dev_%d", b.Rules[len(b.Rules)-1].ID)][bucket])
+	return markFor(p.applied[fmt.Sprintf("dev_%d", rule)][bucket])
 }
 
 // syncResolver runs the DNS relay on a Bridge, restarting it when what it
@@ -611,9 +624,13 @@ func (p *Plane) resolverMark() uint32 {
 func (p *Plane) syncResolver() error {
 	b := p.st.Bridge
 	key := ""
+	var abroad netip.Prefix
 	if b != nil {
 		addr, _ := netip.ParsePrefix(b.Address)
-		key = fmt.Sprintf("%s|%s", addr.Addr(), strings.Join(b.Upstreams, ","))
+		if b.AbroadRule != nil {
+			abroad, _ = netip.ParsePrefix(b.AbroadRule.Source)
+		}
+		key = fmt.Sprintf("%s|%s|%s|%s", addr.Addr(), strings.Join(b.Upstreams, ","), abroad, strings.Join(b.AbroadUpstreams, ","))
 	}
 	if key == p.resKey {
 		return nil
@@ -627,17 +644,21 @@ func (p *Plane) syncResolver() error {
 		return nil
 	}
 	addr, _ := netip.ParsePrefix(b.Address)
-	r := newResolver(net.JoinHostPort(addr.Addr().String(), "53"), b.Upstreams, func() uint32 {
-		p.mu.Lock()
-		defer p.mu.Unlock()
-		return p.resolverMark()
-	})
+	markOf := func(abroad bool) func() uint32 {
+		return func() uint32 {
+			p.mu.Lock()
+			defer p.mu.Unlock()
+			return p.resolverMark(abroad)
+		}
+	}
+	r := newResolver(net.JoinHostPort(addr.Addr().String(), "53"), b.Upstreams, markOf(false))
 	r.roots = p.cfg.UpstreamRoots
+	r.abroad, r.abroadUpstreams, r.abroadMark = abroad, b.AbroadUpstreams, markOf(true)
 	if err := r.start(); err != nil {
 		return fmt.Errorf("resolver: %w", err)
 	}
 	p.resolver, p.resKey = r, key
-	p.log.Info("resolver up", "listen", r.addrUDP(), "upstreams", b.Upstreams)
+	p.log.Info("resolver up", "listen", r.addrUDP(), "upstreams", b.Upstreams, "abroad_upstreams", b.AbroadUpstreams)
 	return nil
 }
 

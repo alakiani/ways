@@ -12,6 +12,9 @@ type Overview struct {
 	// BridgeAddress is the Bridges its record holds and the probe's view
 	// of each domestic Bridge (ADR 0011).
 	BridgeAddress AddressStatus `json:"bridge_address"`
+	// AbroadAddress is the Abroad Bridges its record holds and how each is
+	// judged (ADR 0014).
+	AbroadAddress AddressStatus `json:"abroad_address"`
 	// Backup is the nightly backup's state (ADR 0001).
 	Backup BackupStatus `json:"backup"`
 	// UndeliveredAlerts are alerts no Exit could relay to Telegram yet,
@@ -106,7 +109,10 @@ type RuleInfo struct {
 	Set          string   `json:"set"`
 	RequiredTags []string `json:"required_tags"`
 	Fallback     Fallback `json:"fallback"`
-	Builtin      bool     `json:"builtin"` // the default Rule: locked
+	Builtin      bool     `json:"builtin"` // the default and Abroad Rules: locked
+	// Source is set on the Abroad Rule only: the Abroad Devices' prefix,
+	// matched whatever the destination (ADR 0014).
+	Source string `json:"source,omitempty"`
 }
 
 // RuleEdit changes the IR Rule's Tags and fallback.

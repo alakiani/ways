@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/alakiani/ways/internal/protocol"
+	"github.com/alakiani/ways/internal/store"
 )
 
 func TestDevicesGetUnusedAddressesThatAreNeverReused(t *testing.T) {
@@ -49,10 +50,10 @@ func TestBuiltinRulesAndSets(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(rules) != 2 || rules[0].Name != "IR" || rules[1].Name != "Default" {
+	if len(rules) != 3 || rules[1].Name != "IR" || rules[2].Name != "Default" {
 		t.Fatalf("rules = %+v", rules)
 	}
-	ir, def := rules[0], rules[1]
+	ir, def := rules[1], rules[2]
 	if ir.Fallback != protocol.FallbackNext || def.Fallback != protocol.FallbackDrop || !def.Builtin {
 		t.Errorf("IR = %+v, default = %+v", ir, def)
 	}
@@ -102,5 +103,63 @@ func TestSettingIfUnsetKeepsTheFirstValue(t *testing.T) {
 	}
 	if v, _ := s.SetSettingIfUnset(ctx, "k", "b"); v != "a" {
 		t.Errorf("second = %q, want the first value kept", v)
+	}
+}
+
+// Abroad Devices take their addresses from the upper half of the pool, so a
+// Bridge matches them all with one prefix (ADR 0014).
+func TestAbroadDevicesGetTheUpperHalfOfThePool(t *testing.T) {
+	s := open(t, newClock())
+	u, _ := s.CreateUser(ctx, "maryam")
+	if err := s.SetUserAbroad(ctx, u.ID, true); err != nil {
+		t.Fatal(err)
+	}
+	ord, err := s.AddDevice(ctx, u.ID, "phone", "k1", "", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ab, err := s.AddDevice(ctx, u.ID, "phone abroad", "k2", "", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ab2, _ := s.AddDevice(ctx, u.ID, "laptop abroad", "k3", "", true)
+	if ord.Address != netip.MustParseAddr("10.77.0.2") || ord.Abroad {
+		t.Errorf("ordinary Device = %+v", ord)
+	}
+	if ab.Address != netip.MustParseAddr("10.77.128.1") || !ab.Abroad || ab2.Address != netip.MustParseAddr("10.77.128.2") {
+		t.Errorf("Abroad Devices = %+v, %+v", ab, ab2)
+	}
+	if !store.AbroadPool.Contains(ab.Address) || store.AbroadPool.Contains(ord.Address) || !store.DevicePool.Contains(ab.Address) {
+		t.Errorf("pools: abroad %s, devices %s", store.AbroadPool, store.DevicePool)
+	}
+	devs, _ := s.Devices(ctx)
+	if len(devs) != 3 || devs[0].Abroad || !devs[1].Abroad || !devs[1].UserAbroad {
+		t.Errorf("devices = %+v", devs)
+	}
+	s.SetUserAbroad(ctx, u.ID, false)
+	if devs, _ := s.Devices(ctx); devs[1].UserAbroad {
+		t.Error("the permission's removal is not visible on the Device")
+	}
+	if a, _ := s.Account(ctx, u.ID); a.Abroad {
+		t.Error("the Account still has the permission")
+	}
+}
+
+func TestAbroadRuleIsBuiltInFirstAndMatchesBySource(t *testing.T) {
+	s := open(t, newClock())
+	rules, _ := s.Rules(ctx)
+	if len(rules) != 3 || rules[0].Name != "Abroad" {
+		t.Fatalf("rules = %+v", rules)
+	}
+	ab := rules[0]
+	if ab.Source != store.AbroadPool.String() || !ab.Builtin || ab.Fallback != protocol.FallbackDrop ||
+		len(ab.RequiredTags) != 1 || ab.RequiredTags[0] != "IR" {
+		t.Errorf("Abroad Rule = %+v", ab)
+	}
+	if rules[1].Source != "" || rules[2].Source != "" {
+		t.Error("a destination Rule has a source")
+	}
+	if err := s.UpdateRule(ctx, ab.ID, []string{"!IR"}, "next"); err == nil {
+		t.Error("the Abroad Rule could be changed")
 	}
 }

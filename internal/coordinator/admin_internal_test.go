@@ -134,15 +134,17 @@ func TestAdminRules(t *testing.T) {
 	admin := a.admin()
 	var rules []protocol.RuleInfo
 	admin.must(200, "GET", "/v1/admin/rules", nil, &rules)
-	if len(rules) != 2 || rules[0].Set != "Iran" || !rules[1].Builtin {
+	// The Abroad Rule first and locked (ADR 0014), then IR, then the default.
+	if len(rules) != 3 || rules[0].Source != "10.77.128.0/17" || !rules[0].Builtin || rules[1].Set != "Iran" || !rules[2].Builtin {
 		t.Fatalf("rules = %+v", rules)
 	}
-	admin.must(200, "POST", fmt.Sprint("/v1/admin/rules/", rules[0].ID), protocol.RuleEdit{RequiredTags: []string{"IR"}, Fallback: "drop"}, &rules)
-	if rules[0].Fallback != "drop" {
-		t.Errorf("IR fallback = %s", rules[0].Fallback)
+	admin.must(200, "POST", fmt.Sprint("/v1/admin/rules/", rules[1].ID), protocol.RuleEdit{RequiredTags: []string{"IR"}, Fallback: "drop"}, &rules)
+	if rules[1].Fallback != "drop" {
+		t.Errorf("IR fallback = %s", rules[1].Fallback)
 	}
-	admin.must(403, "POST", fmt.Sprint("/v1/admin/rules/", rules[1].ID), protocol.RuleEdit{RequiredTags: []string{"!IR"}, Fallback: "next"}, nil)
-	admin.must(400, "POST", fmt.Sprint("/v1/admin/rules/", rules[0].ID), protocol.RuleEdit{Fallback: "sometimes"}, nil)
+	admin.must(403, "POST", fmt.Sprint("/v1/admin/rules/", rules[2].ID), protocol.RuleEdit{RequiredTags: []string{"!IR"}, Fallback: "next"}, nil)
+	admin.must(403, "POST", fmt.Sprint("/v1/admin/rules/", rules[0].ID), protocol.RuleEdit{RequiredTags: []string{"!IR"}, Fallback: "next"}, nil)
+	admin.must(400, "POST", fmt.Sprint("/v1/admin/rules/", rules[1].ID), protocol.RuleEdit{Fallback: "sometimes"}, nil)
 }
 
 func TestAdminSets(t *testing.T) {

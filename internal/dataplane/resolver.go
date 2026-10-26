@@ -8,6 +8,7 @@ import (
 	"errors"
 	"io"
 	"net"
+	"net/netip"
 	"sync"
 	"time"
 )
@@ -19,12 +20,23 @@ import (
 // plain GRE, and the filter rewrites DNS answers on port 53. Its upstream
 // sockets carry the default Rule's mark, so its queries leave through an
 // abroad Exit rather than the domestic uplink.
+//
+// An Abroad Device's lookups are the exception (ADR 0014): they go in
+// plain DNS to domestic resolvers, with the Abroad Rule's mark, so they
+// leave from Iran and CDNs answer with their Iranian edges.
 type resolver struct {
 	listen       string // host:port
 	upstreams    []string
 	upstreamPort string         // "853"; tests point it elsewhere
 	roots        *x509.CertPool // what upstream certificates verify against; nil for the system's
 	mark         func() uint32  // the mark upstream sockets carry, read per query
+
+	// Clients in abroad ask abroadUpstreams in plain DNS on plainPort, with
+	// abroadMark. With no abroadUpstreams, they ask as everyone else does.
+	abroad          netip.Prefix
+	abroadUpstreams []string
+	plainPort       string // "53"; tests point it elsewhere
+	abroadMark      func() uint32
 
 	udpAddr, tcpAddr string // where it ended up listening
 
@@ -53,7 +65,7 @@ const (
 )
 
 func newResolver(listen string, upstreams []string, mark func() uint32) *resolver {
-	return &resolver{listen: listen, upstreams: upstreams, upstreamPort: "853", mark: mark,
+	return &resolver{listen: listen, upstreams: upstreams, upstreamPort: "853", plainPort: "53", mark: mark,
 		sessions: tls.NewLRUClientSessionCache(16), idle: map[string][]*upstreamConn{}}
 }
 
@@ -205,16 +217,27 @@ func (r *resolver) serveUDP(ctx context.Context, conn net.PacketConn) {
 			return
 		}
 		go func() {
-			if answer, err := r.ask(ctx, buf[:n]); err == nil {
+			if answer, err := r.ask(ctx, "udp4", from, buf[:n]); err == nil {
 				conn.WriteTo(answer, from)
 			}
 		}()
 	}
 }
 
-// ask tries each upstream in turn.
-func (r *resolver) ask(ctx context.Context, query []byte) ([]byte, error) {
+// ask tries each upstream in turn: the domestic ones over network, as the
+// query came, for an Abroad Device, and the ones abroad over TLS for
+// everyone else.
+func (r *resolver) ask(ctx context.Context, network string, from net.Addr, query []byte) ([]byte, error) {
 	err := errors.New("no upstream resolver")
+	if r.isAbroad(from) {
+		for _, up := range r.abroadUpstreams {
+			var answer []byte
+			if answer, err = r.exchangePlain(ctx, network, up, query); err == nil {
+				return answer, nil
+			}
+		}
+		return nil, err
+	}
 	for _, up := range r.upstreams {
 		var answer []byte
 		if answer, err = r.exchange(ctx, up, query); err == nil {
@@ -234,7 +257,7 @@ func (r *resolver) serveTCP(ctx context.Context, c net.Conn) {
 		if err != nil {
 			return
 		}
-		answer, err := r.ask(ctx, query)
+		answer, err := r.ask(ctx, "tcp4", c.RemoteAddr(), query)
 		if err != nil {
 			return
 		}
@@ -242,6 +265,46 @@ func (r *resolver) serveTCP(ctx context.Context, c net.Conn) {
 			return
 		}
 	}
+}
+
+// isAbroad reports whether a client is an Abroad Device whose lookups go
+// to the domestic resolvers.
+func (r *resolver) isAbroad(from net.Addr) bool {
+	if len(r.abroadUpstreams) == 0 || !r.abroad.IsValid() {
+		return false
+	}
+	ap, err := netip.ParseAddrPort(from.String())
+	return err == nil && r.abroad.Contains(ap.Addr().Unmap())
+}
+
+// exchangePlain asks one domestic upstream one query in plain DNS, over a
+// fresh socket carrying the Abroad Rule's mark. Abroad Devices are few and
+// occasional, so nothing is pooled.
+func (r *resolver) exchangePlain(ctx context.Context, network, upstream string, query []byte) ([]byte, error) {
+	d := &net.Dialer{Timeout: upstreamTimeout, Control: markControl(r.abroadMark())}
+	ctx, cancel := context.WithTimeout(ctx, upstreamTimeout)
+	defer cancel()
+	c, err := d.DialContext(ctx, network, net.JoinHostPort(upstream, r.plainPort))
+	if err != nil {
+		return nil, err
+	}
+	defer c.Close()
+	c.SetDeadline(time.Now().Add(upstreamTimeout))
+	if network == "tcp4" {
+		if err := writeMsg(c, query); err != nil {
+			return nil, err
+		}
+		return readMsg(c)
+	}
+	if _, err := c.Write(query); err != nil {
+		return nil, err
+	}
+	buf := make([]byte, 65535)
+	n, err := c.Read(buf)
+	if err != nil {
+		return nil, err
+	}
+	return buf[:n], nil
 }
 
 func readMsg(r io.Reader) ([]byte, error) {

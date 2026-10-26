@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import { Anchor, Button, Group, Paper, Stack, Table, Text, Title } from "@mantine/core";
-import { IconArrowRight, IconRefresh, IconTrash } from "@tabler/icons-react";
+import { Alert, Anchor, Button, Group, Paper, Stack, Table, Text, Title } from "@mantine/core";
+import { IconArrowRight, IconRefresh, IconTrash, IconWorld } from "@tabler/icons-react";
 import { api, type DeviceInfo, type DeviceUsage, type IssuedDevice, type UsageRow } from "../api/client";
 import { generateKeyPair } from "../lib/keys";
 import { fa } from "../fa";
@@ -12,6 +12,7 @@ export function DevicePage({ id, onChange }: { id: string; onChange: () => void 
   const [device, setDevice] = useState<DeviceInfo | null>(null);
   const [issued, setIssued] = useState<{ device: IssuedDevice; privateKey: string } | null>(null);
   const [usage, setUsage] = useState<DeviceUsage | null>(null);
+  const [error, setError] = useState("");
   useEffect(() => {
     api.GET("/v1/me/devices").then(({ data }) => setDevice(data?.find((d) => d.id === id) ?? null));
     api.GET("/v1/me/devices/{id}/usage", { params: { path: { id } } }).then(({ data }) => setUsage(data ?? null));
@@ -40,11 +41,13 @@ export function DevicePage({ id, onChange }: { id: string; onChange: () => void 
   };
   const replace = async () => {
     const keys = generateKeyPair();
-    const { data } = await api.POST("/v1/me/devices/{id}/replace", {
+    // A replacement is of the same kind (ADR 0014).
+    const { data, response } = await api.POST("/v1/me/devices/{id}/replace", {
       params: { path: { id } },
-      body: { name: device.name, public_key: keys.publicKey },
+      body: { name: device.name, public_key: keys.publicKey, abroad: device.abroad },
     });
     if (data) setIssued({ device: data, privateKey: keys.privateKey });
+    else setError(response.status === 403 ? fa.abroadNotAllowed : fa.error);
   };
 
   return (
@@ -61,6 +64,11 @@ export function DevicePage({ id, onChange }: { id: string; onChange: () => void 
         </Title>
         <StateBadge device={device} />
       </Group>
+      {device.abroad && !device.revoked && (
+        <Alert color={device.reason === "abroad not allowed" ? "red" : "blue"} variant="light" icon={<IconWorld />}>
+          {device.reason === "abroad not allowed" ? fa.abroadBlocked : fa.abroadNotice}
+        </Alert>
+      )}
       <div className="pair">
         <Paper p="md">
           <Text fz="xs" c="dimmed">
@@ -88,6 +96,11 @@ export function DevicePage({ id, onChange }: { id: string; onChange: () => void 
         <Paper p="lg">
           <Stack gap="sm">
             <Text fz="sm">{fa.replaceHint}</Text>
+            {error && (
+              <Alert color="red" variant="light">
+                {error}
+              </Alert>
+            )}
             <Group>
               <Button variant="light" leftSection={<IconRefresh size={18} />} onClick={replace}>
                 {fa.replace}

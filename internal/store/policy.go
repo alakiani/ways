@@ -19,6 +19,13 @@ import (
 // Bridges' resolver (ADR 0004).
 var DevicePool = netip.MustParsePrefix("10.77.0.0/16")
 
+// OrdinaryPool and AbroadPool split DevicePool between ordinary Devices
+// and Abroad Devices, which a Bridge matches by AbroadPool (ADR 0014).
+var (
+	OrdinaryPool = netip.MustParsePrefix("10.77.0.0/17")
+	AbroadPool   = netip.MustParsePrefix("10.77.128.0/17")
+)
+
 // User is a User as stored.
 type User struct {
 	ID        string
@@ -34,6 +41,12 @@ func (s *Store) CreateUser(ctx context.Context, handle string) (User, error) {
 		return User{}, fmt.Errorf("user %q: %w", handle, ErrExists)
 	}
 	return u, err
+}
+
+// SetUserAbroad gives a User the abroad permission, or takes it away; their
+// Abroad Devices stay, cut off while they lack it (ADR 0014).
+func (s *Store) SetUserAbroad(ctx context.Context, id string, abroad bool) error {
+	return s.setUser(ctx, id, `abroad = ?`, abroad)
 }
 
 // SetUserSuspended suspends or reinstates a User.
@@ -55,6 +68,9 @@ type Device struct {
 	Address       netip.Addr
 	Revoked       bool
 	UserSuspended bool
+	// Abroad is set on an Abroad Device; UserAbroad while its User has the
+	// abroad permission (ADR 0014).
+	Abroad, UserAbroad bool
 }
 
 // CreateDevice adds a Device on the next unused address of the pool.
@@ -63,7 +79,7 @@ type Device struct {
 func (s *Store) CreateDevice(ctx context.Context, userID, name, publicKey string) (Device, error) {
 	d := Device{ID: "dv_" + randomHex(8), UserID: userID, Name: name, PublicKey: publicKey}
 	err := s.tx(ctx, func(tx *sql.Tx) error {
-		a, err := nextDeviceAddr(tx)
+		a, err := nextDeviceAddr(tx, false)
 		if err != nil {
 			return err
 		}
@@ -88,7 +104,7 @@ func (s *Store) RevokeDevice(ctx context.Context, id string) error {
 // Devices returns every Device with its User's status.
 func (s *Store) Devices(ctx context.Context) ([]Device, error) {
 	rows, err := s.db.QueryContext(ctx, `SELECT d.id, coalesce(d.user_id, ''), d.name, coalesce(d.public_key, ''), d.address,
-		d.revoked_at IS NOT NULL, coalesce(u.suspended_at IS NOT NULL, 0)
+		d.revoked_at IS NOT NULL, coalesce(u.suspended_at IS NOT NULL, 0), d.abroad, coalesce(u.abroad, 0)
 		FROM devices d LEFT JOIN users u ON u.id = d.user_id ORDER BY d.address`)
 	if err != nil {
 		return nil, err
@@ -98,7 +114,7 @@ func (s *Store) Devices(ctx context.Context) ([]Device, error) {
 	for rows.Next() {
 		var d Device
 		var addr string
-		if err := rows.Scan(&d.ID, &d.UserID, &d.Name, &d.PublicKey, &addr, &d.Revoked, &d.UserSuspended); err != nil {
+		if err := rows.Scan(&d.ID, &d.UserID, &d.Name, &d.PublicKey, &addr, &d.Revoked, &d.UserSuspended, &d.Abroad, &d.UserAbroad); err != nil {
 			return nil, err
 		}
 		d.Address = netip.MustParseAddr(addr)
@@ -217,11 +233,14 @@ type Rule struct {
 	RequiredTags []string
 	Fallback     protocol.Fallback
 	Builtin      bool
+	// Source is set on the Abroad Rule only: it takes the Devices in this
+	// prefix, whatever their destination (ADR 0014).
+	Source string
 }
 
 // Rules returns every Rule in priority order.
 func (s *Store) Rules(ctx context.Context) ([]Rule, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT id, name, priority, set_id, required_tags, fallback, builtin FROM rules ORDER BY priority`)
+	rows, err := s.db.QueryContext(ctx, `SELECT id, name, priority, set_id, required_tags, fallback, builtin, coalesce(source, '') FROM rules ORDER BY priority`)
 	if err != nil {
 		return nil, err
 	}
@@ -230,7 +249,7 @@ func (s *Store) Rules(ctx context.Context) ([]Rule, error) {
 	for rows.Next() {
 		var r Rule
 		var tags string
-		if err := rows.Scan(&r.ID, &r.Name, &r.Priority, &r.SetID, &tags, &r.Fallback, &r.Builtin); err != nil {
+		if err := rows.Scan(&r.ID, &r.Name, &r.Priority, &r.SetID, &tags, &r.Fallback, &r.Builtin, &r.Source); err != nil {
 			return nil, err
 		}
 		if err := json.Unmarshal([]byte(tags), &r.RequiredTags); err != nil {

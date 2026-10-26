@@ -51,14 +51,17 @@ func quotaStateOf(q store.QuotaStanding) quotaState {
 }
 
 // effectiveState is the pure policy function of ADR 0003. Its reasons rank
-// device revoked, then user suspended, then quota used up (ADR 0010), so a
-// resumed User still out of Quota stays blocked.
-func effectiveState(revoked, userSuspended bool, quota quotaState) (EffectiveState, string) {
+// device revoked, then user suspended, then an Abroad Device whose User
+// lacks the abroad permission (ADR 0014), then quota used up (ADR 0010), so
+// a resumed User still out of Quota stays blocked.
+func effectiveState(revoked, userSuspended, abroadDenied bool, quota quotaState) (EffectiveState, string) {
 	switch {
 	case revoked:
 		return StateBlocked, "device revoked"
 	case userSuspended:
 		return StateBlocked, "user suspended"
+	case abroadDenied:
+		return StateBlocked, "abroad not allowed"
 	case quota.ranOut && quota.rate > 0:
 		return StateThrottled, "quota used up"
 	case quota.ranOut:
@@ -153,7 +156,7 @@ func (c *Coordinator) bridgeState(ctx context.Context, quota map[string]quotaSta
 	}
 	for _, d := range devices {
 		// A throttled Device stays in and carries its rate (ADR 0010).
-		st, _ := effectiveState(d.Revoked || d.PublicKey == "", d.UserSuspended, quota[d.UserID])
+		st, _ := effectiveState(d.Revoked || d.PublicKey == "", d.UserSuspended, d.Abroad && !d.UserAbroad, quota[d.UserID])
 		if st == StateBlocked {
 			continue
 		}
@@ -183,6 +186,14 @@ func (c *Coordinator) bridgeState(ctx context.Context, quota map[string]quotaSta
 		return nil, err
 	}
 	for _, r := range rules {
+		if r.Source != "" {
+			// The Abroad Rule goes apart, where older Agents never see it
+			// (ADR 0014). Its lookups go to the domestic resolvers.
+			b.AbroadRule = &protocol.Rule{ID: r.ID, Name: r.Name, Priority: r.Priority, Source: r.Source,
+				RequiredTags: r.RequiredTags, Fallback: r.Fallback}
+			b.AbroadUpstreams = c.AbroadUpstreams
+			continue
+		}
 		b.Rules = append(b.Rules, protocol.Rule{ID: r.ID, Name: r.Name, Priority: r.Priority, SetHash: hashes[r.SetID],
 			RequiredTags: r.RequiredTags, Fallback: r.Fallback})
 	}

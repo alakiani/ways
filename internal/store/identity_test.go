@@ -47,7 +47,7 @@ func TestRecoveryInviteReplacesCredentialsAndEndsSessions(t *testing.T) {
 	s.SetTOTPPending(ctx, a.ID, "SECRET")
 	s.ConfirmTOTP(ctx, a.ID)
 	sess, _ := s.CreateSession(ctx, a.ID, true, time.Hour)
-	d, err := s.AddDevice(ctx, a.ID, "phone", "pub1", "")
+	d, err := s.AddDevice(ctx, a.ID, "phone", "pub1", "", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -75,16 +75,16 @@ func TestDeviceCapAndReplace(t *testing.T) {
 	s := open(t, newClock())
 	tok, _, _ := s.CreateInvite(ctx, store.Invite{Kind: "new", DeviceCap: 2}, time.Hour)
 	a, _ := s.AcceptNewInvite(ctx, tok, "maryam", "h")
-	d1, _ := s.AddDevice(ctx, a.ID, "phone", "k1", "")
-	if _, err := s.AddDevice(ctx, a.ID, "laptop", "k1", ""); !errors.Is(err, store.ErrKeyInUse) {
+	d1, _ := s.AddDevice(ctx, a.ID, "phone", "k1", "", false)
+	if _, err := s.AddDevice(ctx, a.ID, "laptop", "k1", "", false); !errors.Is(err, store.ErrKeyInUse) {
 		t.Errorf("duplicate key: %v", err)
 	}
-	s.AddDevice(ctx, a.ID, "laptop", "k2", "")
-	if _, err := s.AddDevice(ctx, a.ID, "tablet", "k3", ""); !errors.Is(err, store.ErrCapReached) {
+	s.AddDevice(ctx, a.ID, "laptop", "k2", "", false)
+	if _, err := s.AddDevice(ctx, a.ID, "tablet", "k3", "", false); !errors.Is(err, store.ErrCapReached) {
 		t.Errorf("over the cap: %v", err)
 	}
 	// Replacing needs no room: the old one is revoked in the same step.
-	d3, err := s.AddDevice(ctx, a.ID, "phone", "k3", d1.ID)
+	d3, err := s.AddDevice(ctx, a.ID, "phone", "k3", d1.ID, false)
 	if err != nil {
 		t.Fatalf("replace at the cap: %v", err)
 	}

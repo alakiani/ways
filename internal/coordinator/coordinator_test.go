@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"slices"
 	"testing"
 	"time"
 
@@ -103,6 +104,19 @@ func TestCreateNodeIsIdempotent(t *testing.T) {
 	changed.Tags = []string{"DE"}
 	if status := admin.Do(t, http.MethodPost, "/v1/nodes", changed, nil); status != http.StatusConflict {
 		t.Errorf("changed tags: status %d, want 409", status)
+	}
+
+	// New Roles with the same Tags are taken, so an abroad Exit can become
+	// an Abroad Bridge by rerunning the playbook (ADR 0014).
+	roles := bridge
+	roles.Roles = []protocol.Role{protocol.RoleExit, protocol.RoleBridge}
+	got := admin.CreateNode(t, roles)
+	if got.Node.ID != first.Node.ID || !slices.Equal(got.Node.Roles, []protocol.Role{protocol.RoleBridge, protocol.RoleExit}) ||
+		got.EnrollmentToken != "" {
+		t.Errorf("roles changed = %+v", got)
+	}
+	if n, _ := s.Node(context.Background(), first.Node.ID); len(n.Roles) != 2 {
+		t.Errorf("stored roles = %v", n.Roles)
 	}
 }
 

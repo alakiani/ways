@@ -48,12 +48,17 @@ type Coordinator struct {
 	Egress EgressTargets
 	// Upstreams are the resolvers abroad Bridges forward DNS to.
 	Upstreams []string
+	// AbroadUpstreams are the domestic resolvers Bridges send Abroad
+	// Devices' lookups to (ADR 0014); by default the IR egress check's.
+	AbroadUpstreams []string
 	// Scoring is pushed to every Bridge (ADR 0008).
 	Scoring protocol.Scoring
 	// PanelURL is where the panel is served; Invite links point into it.
 	PanelURL string
 	// BridgeAddress is the hostname in Device configs (ADR 0011).
 	BridgeAddress string
+	// AbroadAddress is the hostname in Abroad Device configs (ADR 0014).
+	AbroadAddress string
 	// DNS sets the Bridge Address's record; nil leaves it alone.
 	DNS AddressDNS
 	// Address holds the Bridge Address's timings and the probe's settings.
@@ -78,7 +83,8 @@ type Coordinator struct {
 	reconcileMu sync.Mutex // one Reconcile at a time
 	quotaMu     sync.Mutex
 	quotaSeen   map[string]quotaState // the Users out of Quota in the latest snapshots
-	address     addressState
+	address     addressState          // the Bridge Address's
+	abroad      addressState          // the Abroad Bridge Address's
 	mon         monitorState
 
 	mu      sync.Mutex
@@ -88,12 +94,13 @@ type Coordinator struct {
 // New returns a Coordinator over s and c.
 func New(s *store.Store, c *ca.CA, log *slog.Logger) *Coordinator {
 	return &Coordinator{store: s, ca: c, log: log, LongPoll: 60 * time.Second,
-		LinkTiming: protocol.DefaultLinkTiming, Egress: DefaultEgressTargets, Upstreams: DefaultUpstreams, Scoring: protocol.DefaultScoring,
-		PanelURL: "https://wayfinder.ir", BridgeAddress: DefaultBridgeAddress, Address: DefaultAddressSettings, SecureCookies: true,
+		LinkTiming: protocol.DefaultLinkTiming, Egress: DefaultEgressTargets, Upstreams: DefaultUpstreams,
+		AbroadUpstreams: DefaultEgressTargets.IR.Resolvers, Scoring: protocol.DefaultScoring,
+		PanelURL: "https://wayfinder.ir", BridgeAddress: DefaultBridgeAddress, AbroadAddress: DefaultAbroadAddress,
+		Address: DefaultAddressSettings, SecureCookies: true,
 		Monitor: DefaultMonitorSettings, Backup: DefaultBackupSettings, mon: monitorState{poke: make(chan struct{}, 1)},
 		FeedURL: irfeed.DefaultURL, RIPEstatURL: irfeed.DefaultRIPEstatURL, HTTPClient: http.DefaultClient,
-		address: addressState{probes: map[string]protocol.ProbeResult{}, inelSince: map[string]time.Time{}, elSince: map[string]time.Time{},
-			reasons: map[string][]string{}},
+		address: newAddressState(), abroad: newAddressState(),
 		changed: make(chan struct{})}
 }
 
@@ -296,10 +303,20 @@ func (c *Coordinator) ensureNode(w http.ResponseWriter, r *http.Request, req pro
 	case err != nil:
 		c.internalError(w, err)
 		return protocol.CreateNodeResponse{}, false
-	case !slices.Equal(n.Roles, req.Roles) || !slices.Equal(n.Tags, req.Tags):
-		// Rerunning the playbook must not silently change a live Node.
+	case !slices.Equal(n.Tags, req.Tags):
+		// Rerunning the playbook must not silently change what traffic a
+		// live Node may carry.
 		writeError(w, http.StatusConflict, fmt.Sprintf("node %q exists with roles %v and tags %v", n.Name, n.Roles, n.Tags))
 		return protocol.CreateNodeResponse{}, false
+	case !slices.Equal(n.Roles, req.Roles):
+		// New Roles are taken, so an abroad Exit becomes an Abroad Bridge
+		// by rerunning the playbook (ADR 0014).
+		c.log.Info("node roles changed", "node", n.Name, "from", n.Roles, "to", req.Roles)
+		if err := c.UpdateNode(ctx, n.ID, req.Roles, n.Tags); err != nil {
+			c.internalError(w, err)
+			return protocol.CreateNodeResponse{}, false
+		}
+		n.Roles = req.Roles
 	}
 
 	resp := protocol.CreateNodeResponse{Node: c.nodeStatus(ctx, n)}

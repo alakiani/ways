@@ -1,2 +1,4 @@
-ways_roles: [exit]
+# Abroad Nodes are Exits for traffic abroad, and Abroad Bridges: Abroad
+# Devices connect to them and reach a domestic Exit over the mesh (ADR 0014).
+ways_roles: [bridge, exit]
 ways_tags: []

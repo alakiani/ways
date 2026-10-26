@@ -14,7 +14,7 @@ func usageFixture(t *testing.T) (*store.Store, *clock, store.UserDevice, string)
 	s := open(t, c)
 	tok, _, _ := s.CreateInvite(ctx, store.Invite{Kind: "new"}, time.Hour)
 	a, _ := s.AcceptNewInvite(ctx, tok, "maryam", "h")
-	d, err := s.AddDevice(ctx, a.ID, "phone", "k1", "")
+	d, err := s.AddDevice(ctx, a.ID, "phone", "k1", "", false)
 	if err != nil {
 		t.Fatal(err)
 	}

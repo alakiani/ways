@@ -67,6 +67,7 @@ func (c *Coordinator) routes() []route {
 		{"POST", "/v1/admin/users/{id}/suspend", authAdmin, "Suspend a User: their Devices leave the Bridges", nil, protocol.UserInfo{}, c.adminSuspend},
 		{"POST", "/v1/admin/users/{id}/resume", authAdmin, "Resume a suspended User", nil, protocol.UserInfo{}, c.adminResume},
 		{"POST", "/v1/admin/users/{id}/device-cap", authAdmin, "Set a User's Device cap", protocol.SetDeviceCap{}, protocol.UserInfo{}, c.adminSetCap},
+		{"POST", "/v1/admin/users/{id}/abroad", authAdmin, "Give a User the abroad permission or take it away; without it their Abroad Devices are cut off, not revoked", protocol.SetAbroad{}, protocol.UserInfo{}, c.adminSetAbroad},
 		{"POST", "/v1/admin/users/{id}/quota", authAdmin, "Set a User's Quota (bytes per Quota Period, or null for unlimited) and what happens when they run out", protocol.SetQuota{}, protocol.UserInfo{}, c.adminSetQuota},
 		{"POST", "/v1/admin/users/{id}/top-up", authAdmin, "Add bytes to what a User may use in this Quota Period only", protocol.TopUp{}, protocol.UserInfo{}, c.adminTopUp},
 		{"POST", "/v1/admin/users/{id}/reset", authAdmin, "Reset now: bring a User back to a full Quota (not for unlimited Quotas)", nil, protocol.UserInfo{}, c.adminReset},

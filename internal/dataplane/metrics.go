@@ -75,7 +75,7 @@ func (p *Plane) writePaths(w *metrics.Writer) {
 	for _, l := range p.st.Links {
 		peers[linkKey(l.ID)] = l.Peer.Name
 	}
-	rules := p.st.Bridge.Rules
+	rules := p.st.Bridge.AllRules()
 	for i, r := range rules {
 		labels := []string{"rule_id", strconv.FormatUint(r.ID, 10), "rule", r.Name, "default", strconv.FormatBool(i == len(rules)-1)}
 		for _, v := range p.views[r.ID] {

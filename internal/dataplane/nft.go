@@ -94,6 +94,9 @@ func limitName(dir string, addr netip.Addr) string {
 type nftRule struct {
 	ID       uint64
 	Elements []string
+	// Source, set on the Abroad Rule only, is matched instead of a
+	// Destination Set (ADR 0014).
+	Source string
 	// Device and Transit map each bucket to a candidate key.
 	Device, Transit [buckets]string
 }
@@ -109,9 +112,11 @@ func render(r ruleset) string {
 
 	if r.Bridge {
 		for _, rule := range r.Rules {
-			if len(rule.Elements) == 0 {
+			switch {
+			case rule.Source != "": // matched by source, with no Destination Set
+			case len(rule.Elements) == 0:
 				w("\tset rule_%d { type ipv4_addr; flags interval; }", rule.ID)
-			} else {
+			default:
 				w("\tset rule_%d { type ipv4_addr; flags interval; elements = { %s } }", rule.ID, strings.Join(rule.Elements, ", "))
 			}
 			w("\tmap dev_%d { type ipv4_addr : mark; elements = { %s } }", rule.ID, bucketElements(rule.Device))
@@ -161,10 +166,19 @@ func render(r ruleset) string {
 	if r.Bridge {
 		// IPv6 is black-holed (ADR 0003).
 		w("\t\tiifname %q meta nfproto ipv6 drop", DeviceIface)
+		// The Abroad Rule takes its Devices' traffic ahead of everything,
+		// DoT included (ADR 0014).
+		for _, rule := range r.Rules {
+			if rule.Source != "" {
+				w("\t\tiifname %q ip saddr %s counter meta mark set %s map @dev_%d accept", DeviceIface, rule.Source, bucket, rule.ID)
+			}
+		}
 		// DNS over TLS goes abroad whatever its destination (ADR 0004).
 		w("\t\tiifname %q tcp dport 853 counter meta mark set %s map @dev_%d accept", DeviceIface, bucket, r.DefaultRule)
 		for _, rule := range r.Rules {
-			w("\t\tiifname %q ip daddr @rule_%d counter meta mark set %s map @dev_%d accept", DeviceIface, rule.ID, bucket, rule.ID)
+			if rule.Source == "" {
+				w("\t\tiifname %q ip daddr @rule_%d counter meta mark set %s map @dev_%d accept", DeviceIface, rule.ID, bucket, rule.ID)
+			}
 		}
 		// Fail closed: Device traffic no Rule claimed goes nowhere.
 		w("\t\tiifname %q counter drop", DeviceIface)
@@ -172,9 +186,18 @@ func render(r ruleset) string {
 		// Transit from a neighbouring Bridge is classified by the same
 		// Rules, but only onto this Bridge's own direct and local
 		// candidates (ADR 0008).
+		// The source address survives the Link, so an Abroad Device's
+		// traffic keeps to the Abroad Rule in transit too.
+		for _, rule := range r.Rules {
+			if rule.Source != "" {
+				w("\t\tiifname @transit_ifaces ct direction original ip saddr %s counter meta mark set %s map @tr_%d accept", rule.Source, bucket, rule.ID)
+			}
+		}
 		w("\t\tiifname @transit_ifaces ct direction original tcp dport 853 counter meta mark set %s map @tr_%d accept", bucket, r.DefaultRule)
 		for _, rule := range r.Rules {
-			w("\t\tiifname @transit_ifaces ct direction original ip daddr @rule_%d counter meta mark set %s map @tr_%d accept", rule.ID, bucket, rule.ID)
+			if rule.Source == "" {
+				w("\t\tiifname @transit_ifaces ct direction original ip daddr @rule_%d counter meta mark set %s map @tr_%d accept", rule.ID, bucket, rule.ID)
+			}
 		}
 	}
 	w("\t}")

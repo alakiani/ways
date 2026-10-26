@@ -10,6 +10,7 @@ import (
 	"crypto/x509/pkix"
 	"math/big"
 	"net"
+	"net/netip"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -189,5 +190,109 @@ func TestResolverTriesTheNextUpstream(t *testing.T) {
 	r := startResolver(t, roots, port, "127.0.0.2", host)
 	if got, err := askUDP(t, r, "q", 8*time.Second); err != nil || !bytes.Equal([]byte(got), []byte("answer:q")) {
 		t.Errorf("answer = %q, %v", got, err)
+	}
+}
+
+// fakePlainUpstream is a plain DNS resolver on one port, UDP and TCP: it
+// answers every query with "plain:" + query. It counts the queries.
+func fakePlainUpstream(t *testing.T) (string, *atomic.Int32) {
+	t.Helper()
+	udp, err := net.ListenPacket("udp4", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { udp.Close() })
+	tcp, err := net.Listen("tcp4", udp.LocalAddr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { tcp.Close() })
+	var queries atomic.Int32
+	go func() {
+		buf := make([]byte, 512)
+		for {
+			n, from, err := udp.ReadFrom(buf)
+			if err != nil {
+				return
+			}
+			queries.Add(1)
+			udp.WriteTo(append([]byte("plain:"), buf[:n]...), from)
+		}
+	}()
+	go func() {
+		for {
+			c, err := tcp.Accept()
+			if err != nil {
+				return
+			}
+			go func() {
+				defer c.Close()
+				for {
+					q, err := readMsg(c)
+					if err != nil {
+						return
+					}
+					queries.Add(1)
+					writeMsg(c, append([]byte("plain:"), q...))
+				}
+			}()
+		}
+	}()
+	return udp.LocalAddr().String(), &queries
+}
+
+// An Abroad Device's lookups go to the domestic resolvers in plain DNS,
+// over UDP or TCP as they came, with the Abroad Rule's mark; every other
+// Device's still go abroad over TLS (ADR 0014).
+func TestResolverSendsAbroadDevicesToDomesticResolvers(t *testing.T) {
+	cert, roots := testCert(t)
+	tlsUp, tlsConns := fakeUpstream(t, cert)
+	tlsHost, tlsPort, _ := net.SplitHostPort(tlsUp)
+	plainUp, plainQueries := fakePlainUpstream(t)
+	plainHost, plainPort, _ := net.SplitHostPort(plainUp)
+	if newResolver("", nil, nil).plainPort != "53" {
+		t.Error("domestic resolvers are not asked on port 53")
+	}
+
+	var abroadMarks atomic.Int32
+	start := func(abroad string) *resolver {
+		r := newResolver("127.0.0.1:0", []string{tlsHost}, func() uint32 { return 0 })
+		r.roots, r.upstreamPort, r.plainPort = roots, tlsPort, plainPort
+		r.abroad, r.abroadUpstreams = netip.MustParsePrefix(abroad), []string{"127.0.0.2", plainHost}
+		r.abroadMark = func() uint32 { abroadMarks.Add(1); return 0 }
+		if err := r.start(); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(r.stop)
+		return r
+	}
+
+	// The test's client is 127.0.0.1: inside the abroad prefix...
+	r := start("127.0.0.0/8")
+	if got, err := askUDP(t, r, "q1", 8*time.Second); err != nil || got != "plain:q1" {
+		t.Errorf("UDP answer = %q, %v", got, err)
+	}
+	tc, err := net.Dial("tcp4", r.addrTCP())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tc.Close()
+	tc.SetDeadline(time.Now().Add(8 * time.Second))
+	writeMsg(tc, []byte("q2"))
+	if a, err := readMsg(tc); err != nil || string(a) != "plain:q2" {
+		t.Errorf("TCP answer = %q, %v", a, err)
+	}
+	if plainQueries.Load() != 2 || tlsConns.Load() != 0 || abroadMarks.Load() == 0 {
+		t.Errorf("plain queries %d, TLS connections %d, abroad marks %d; want 2, 0, some",
+			plainQueries.Load(), tlsConns.Load(), abroadMarks.Load())
+	}
+
+	// ...and outside it.
+	r = start("10.77.128.0/17")
+	if got, err := askUDP(t, r, "q3", 2*time.Second); err != nil || got != "answer:q3" {
+		t.Errorf("answer = %q, %v", got, err)
+	}
+	if plainQueries.Load() != 2 {
+		t.Error("an ordinary Device's lookup went to a domestic resolver")
 	}
 }

@@ -231,3 +231,32 @@ func TestNoThrottlesRenderNoPolicers(t *testing.T) {
 		t.Errorf("a Node that is no Bridge renders policers:\n%s", got)
 	}
 }
+
+func TestAbroadRuleMatchesBySourceAheadOfEverything(t *testing.T) {
+	rs := bridgeRuleset()
+	abroad := nftRule{ID: 3, Source: "10.77.128.0/17", Device: allOn("link:3"), Transit: allOn(keyLocal)}
+	rs.Rules = append([]nftRule{abroad}, rs.Rules...)
+	got := render(rs)
+	for _, want := range []string{
+		"map dev_3 { type ipv4_addr : mark; elements = { 0.0.0.0 : 0x20003,",
+		`iifname "ways0" ip saddr 10.77.128.0/17 counter meta mark set ip saddr & 0.0.0.63 map @dev_3 accept`,
+		`iifname @transit_ifaces ct direction original ip saddr 10.77.128.0/17 counter meta mark set ip saddr & 0.0.0.63 map @tr_3 accept`,
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("ruleset lacks %q:\n%s", want, got)
+		}
+	}
+	if strings.Contains(got, "set rule_3") || strings.Contains(got, "@rule_3") {
+		t.Error("the Abroad Rule has a Destination Set")
+	}
+	pos := func(s string) int { return strings.Index(got, s) }
+	// DoT and every destination Rule come after it, so an Abroad Device's
+	// traffic, DoT included, never leaves abroad (ADR 0014).
+	if dev := pos(`iifname "ways0" ip saddr 10.77.128.0/17`); dev < 0 || dev > pos(`iifname "ways0" tcp dport 853`) || dev > pos("@rule_1") {
+		t.Error("the Abroad Rule is not first for Devices")
+	}
+	if tr := pos(`iifname @transit_ifaces ct direction original ip saddr 10.77.128.0/17`); tr < 0 ||
+		tr > pos("iifname @transit_ifaces ct direction original tcp dport 853") || tr > pos("@tr_1 accept") {
+		t.Error("the Abroad Rule is not first for transit")
+	}
+}

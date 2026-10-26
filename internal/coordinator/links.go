@@ -62,10 +62,10 @@ func ends(a, b store.Node) (initiator, listener store.Node) {
 // wantedTransports is a Link's candidate instances by Transport, in
 // preference order: across the filter one GRE instance, two AmneziaWG
 // instances and one plain WireGuard instance (ADR 0009); on the same side
-// one plain WireGuard and one AmneziaWG instance (ADR 0007). Transports off
-// the global list are left out.
+// one GRE and one plain WireGuard instance, since nothing filters it
+// (ADR 0013). Transports off the global list are left out.
 func wantedTransports(a, b store.Node, enabled []protocol.Transport) []protocol.Transport {
-	want := []protocol.Transport{protocol.TransportWireGuard, protocol.TransportAmneziaWG}
+	want := []protocol.Transport{protocol.TransportGRE, protocol.TransportWireGuard}
 	if crosses(a, b) {
 		want = []protocol.Transport{protocol.TransportGRE, protocol.TransportAmneziaWG, protocol.TransportAmneziaWG, protocol.TransportWireGuard}
 	}
@@ -183,7 +183,7 @@ func linksFor(n store.Node, v meshView) []protocol.Link {
 			out = append(out, link) // no instance can come up without both keys
 			continue
 		}
-		for _, in := range preferenceOrder(v.instances[l.ID], crosses(n, peer)) {
+		for _, in := range preferenceOrder(v.instances[l.ID]) {
 			listenAddr, initAddr := slotAddrs(in.Slot)
 			pi := protocol.Instance{ID: in.ID, Transport: in.Transport}
 			if in.Transport == protocol.TransportGRE {
@@ -225,13 +225,10 @@ func linksFor(n store.Node, v meshView) []protocol.Link {
 }
 
 // preferenceOrder sorts a Link's instances by Transport, then in the order
-// they were created: across the filter GRE, AmneziaWG, then plain WireGuard
-// (ADR 0009); on the same side plain WireGuard first (ADR 0007).
-func preferenceOrder(insts []store.Instance, crossing bool) []store.Instance {
-	order := []protocol.Transport{protocol.TransportWireGuard, protocol.TransportAmneziaWG, protocol.TransportGRE}
-	if crossing {
-		order = []protocol.Transport{protocol.TransportGRE, protocol.TransportAmneziaWG, protocol.TransportWireGuard}
-	}
+// they were created: GRE, AmneziaWG, then plain WireGuard (ADR 0009). A
+// same-side Link has no AmneziaWG (ADR 0013), so the one order serves both.
+func preferenceOrder(insts []store.Instance) []store.Instance {
+	order := []protocol.Transport{protocol.TransportGRE, protocol.TransportAmneziaWG, protocol.TransportWireGuard}
 	out := slices.Clone(insts)
 	slices.SortStableFunc(out, func(a, b store.Instance) int {
 		if ra, rb := slices.Index(order, a.Transport), slices.Index(order, b.Transport); ra != rb {

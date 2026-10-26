@@ -164,7 +164,8 @@ func (m *mesh) name(nodeID string) string {
 // instance's UDP port moves the Link to its other instance within seconds;
 // a dead instance is replaced with new parameters. Since ADR 0009 a Link
 // that crosses the filter has GRE, two AmneziaWG instances and plain
-// WireGuard, in that order.
+// WireGuard, in that order; since ADR 0013 a same-side Link has GRE, then
+// plain WireGuard.
 func TestLinks(t *testing.T) {
 	binDir(t)
 	for _, mod := range []string{"wireguard", "ip_gre"} {
@@ -205,11 +206,19 @@ func TestLinks(t *testing.T) {
 	if byTransport[protocol.TransportGRE] != 1 || byTransport[protocol.TransportAmneziaWG] != 2 || byTransport[protocol.TransportWireGuard] != 1 {
 		t.Errorf("crossing link instances by transport = %v, want 1 gre, 2 amneziawg, 1 wireguard", byTransport)
 	}
+	// Same side: GRE, then plain WireGuard, no AmneziaWG (ADR 0013).
 	same := m.linkID("ir1", "ir2")
-	// WireGuard is preferred. If AmneziaWG came up a moment sooner, the
-	// Link moves to WireGuard after the switch-back time.
-	testutil.Eventually(t, 45*time.Second, "same-side link carried by wireguard", func() bool {
-		return m.link("ir1", same).Transport == protocol.TransportWireGuard
+	byTransport = map[protocol.Transport]int{}
+	for _, in := range m.instances(same) {
+		byTransport[in.Transport]++
+	}
+	if byTransport[protocol.TransportGRE] != 1 || byTransport[protocol.TransportWireGuard] != 1 || len(byTransport) != 2 {
+		t.Errorf("same-side link instances by transport = %v, want 1 gre, 1 wireguard", byTransport)
+	}
+	// GRE is preferred. If WireGuard came up a moment sooner, the Link
+	// moves to GRE after the switch-back time.
+	testutil.Eventually(t, 45*time.Second, "same-side link carried by gre", func() bool {
+		return m.link("ir1", same).Transport == protocol.TransportGRE
 	})
 
 	// With GRE blocked, the crossing Link runs on AmneziaWG. Blocking the
@@ -241,23 +250,22 @@ func TestLinks(t *testing.T) {
 		t.Errorf("moving off a blocked instance took %v, want a few seconds", moved)
 	}
 
-	// Same side: off WireGuard while it is blocked, and back to it only
-	// after it has been Up for the switch-back time.
-	wg := m.instance(m.link("ir1", same).ActiveInstance)
-	wgBlock := l.Filter(lab.DropUDP(l.Node(m.name(wg.Listener)), wg.ListenPort))
-	testutil.Eventually(t, 15*time.Second, "same-side link moves to amneziawg", func() bool {
+	// Same side: off GRE while it is blocked, onto plain WireGuard, and
+	// back to GRE only after it has been Up for the switch-back time.
+	sameGRE := l.Filter(lab.DropGREBetween(l.Node("ir1"), l.Node("ir2")))
+	testutil.Eventually(t, 15*time.Second, "same-side link moves to wireguard", func() bool {
 		lh := m.link("ir1", same)
-		return lh.Up && lh.Transport == protocol.TransportAmneziaWG
+		return lh.Up && lh.Transport == protocol.TransportWireGuard
 	})
-	wgBlock.Remove()
+	sameGRE.Remove()
 	unblocked := time.Now()
-	// WireGuard counts as Up again once the losses from the block leave
-	// its 30 s window, and the Link returns 15 s after that.
-	testutil.Eventually(t, 75*time.Second, "same-side link switches back to wireguard", func() bool {
-		return m.link("ir1", same).Transport == protocol.TransportWireGuard
+	// GRE counts as Up again once the losses from the block leave its
+	// 30 s window, and the Link returns 15 s after that.
+	testutil.Eventually(t, 75*time.Second, "same-side link switches back to gre", func() bool {
+		return m.link("ir1", same).Transport == protocol.TransportGRE
 	})
 	if back := time.Since(unblocked); back < 15*time.Second {
-		t.Errorf("switched back to wireguard after %v, before the 15 s switch-back", back)
+		t.Errorf("switched back to gre after %v, before the 15 s switch-back", back)
 	}
 
 	// The blocked crossing instance stays dead, so it is replaced: a new

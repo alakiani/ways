@@ -201,8 +201,8 @@ func TestAdminPanel(t *testing.T) {
 		t.Errorf("transports = %v, want all three back on", ts)
 	}
 	rules, _ := co.store.Rules(ctx)
-	if rules[0].Fallback != protocol.FallbackNext {
-		t.Errorf("IR fallback = %s, want next", rules[0].Fallback)
+	if rules[1].Fallback != protocol.FallbackNext { // after the Abroad Rule
+		t.Errorf("IR fallback = %s, want next", rules[1].Fallback)
 	}
 	sets, _ := co.store.DestinationSets(ctx)
 	if adds := prefixStrings(sets[0].Additions); !slices.Contains(adds, "185.0.0.0/24") {

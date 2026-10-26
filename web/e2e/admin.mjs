@@ -71,6 +71,10 @@ try {
   await user.getByLabel("Device cap").fill("5");
   await user.getByLabel("Device cap").blur();
   await page.waitForResponse((r) => r.url().endsWith("/v1/admin/users") && r.request().method() === "GET");
+  // The abroad permission (ADR 0014).
+  await user.getByLabel("Abroad").check();
+  await page.waitForResponse((r) => r.url().endsWith("/abroad") && r.request().method() === "POST");
+  await user.getByLabel("Abroad").and(page.locator(":checked")).waitFor();
   await user.getByRole("button", { name: "Recovery Invite" }).click();
   await page.locator("[data-testid=recovery-link]", { hasText: "/#/invite/" }).waitFor();
   await page.locator("[data-testid=user-reza]").getByRole("button", { name: "Delete" }).click();
@@ -160,7 +164,7 @@ try {
   await page.check("input[name=transport-wireguard]");
   await page.waitForResponse((r) => r.url().endsWith("/v1/admin/transports") && r.request().method() === "POST");
 
-  step("rules: change the IR Rule; the default Rule is locked");
+  step("rules: change the IR Rule; the default and Abroad Rules are locked");
   await screen("/admin/rules", "Rules");
   const ir = page.locator("[data-testid=rule-IR]");
   await ir.locator("select[name=fallback]").selectOption("drop");
@@ -173,6 +177,13 @@ try {
   if ((await page.locator("[data-testid=rule-Default] input, [data-testid=rule-Default] select").count()) > 0) {
     throw new Error("the default Rule can be edited");
   }
+  // The Abroad Rule is locked too, and shown first (ADR 0014).
+  await page.locator("[data-testid=rule-Abroad]", { hasText: "Abroad Devices (10.77.128.0/17)" }).waitFor();
+  if ((await page.locator("[data-testid=rule-Abroad] input, [data-testid=rule-Abroad] select").count()) > 0) {
+    throw new Error("the Abroad Rule can be edited");
+  }
+  const rules = await page.locator("[data-testid^=rule-]").evaluateAll((els) => els.map((e) => e.dataset.testid));
+  if (rules.join() !== "rule-Abroad,rule-IR,rule-Default") throw new Error(`Rules in the order ${rules}`);
 
   step("destination sets: fetch now, overrides, roll back");
   await screen("/admin/sets", "Destination Sets");

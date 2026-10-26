@@ -54,6 +54,8 @@ function UserApp({ route }: { route: string }) {
     page = <LoginPage onSignedIn={signedIn} />;
   } else if (route === "/devices/new") {
     page = <NewDevicePage onDone={refresh} />;
+  } else if (route === "/devices/new-abroad") {
+    page = <NewDevicePage onDone={refresh} abroad />;
   } else if (route.startsWith("/devices/")) {
     page = <DevicePage id={route.slice("/devices/".length)} onChange={refresh} />;
   } else if (route === "/usage") {

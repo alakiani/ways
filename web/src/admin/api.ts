@@ -1,6 +1,7 @@
 import type { components } from "../api/schema";
 
 export type Overview = components["schemas"]["Overview"];
+export type AddressStatus = components["schemas"]["AddressStatus"];
 export type NodeTile = components["schemas"]["NodeTile"];
 export type LinkTile = components["schemas"]["LinkTile"];
 export type SetInfo = components["schemas"]["SetInfo"];

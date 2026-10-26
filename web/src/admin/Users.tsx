@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Badge, Button, Group, NativeSelect, Table, Text, TextInput } from "@mantine/core";
+import { Badge, Button, Checkbox, Group, NativeSelect, Table, Text, TextInput } from "@mantine/core";
 import { api, type Me } from "../api/client";
 import { typedConfirm, type UserInfo } from "./api";
 import { byQuotaShare, gbField, mbits, parseGB, periodText, rateOf, renews } from "./quota";
@@ -8,7 +8,8 @@ import { ListTable, Screen, Shown, Status } from "./ui";
 // Users: Suspend/Resume, Device cap, recovery Invite, Delete with typed
 // confirmation. Admins see totals per User, not Devices (issue #14). Each
 // User's Quota and running-out setting are edited inline, and the remedies
-// are actions (ADR 0010); the most used share of Quota comes first.
+// are actions (ADR 0010); the most used share of Quota comes first. The
+// abroad permission lets a User hold Abroad Devices (ADR 0014).
 export function UsersScreen({ self }: { self: Me }) {
   const [users, setUsers] = useState<UserInfo[]>([]);
   const [link, setLink] = useState("");
@@ -31,12 +32,13 @@ export function UsersScreen({ self }: { self: Me }) {
   return (
     <Screen title="Users" about="Most of their Quota used first. Fields save when you leave them.">
       {link && <Shown label="Recovery Invite; send it out of band:" value={link} testid="recovery-link" />}
-      <ListTable minWidth={1000}>
+      <ListTable minWidth={1060}>
         <Table.Thead>
           <Table.Tr>
             <Table.Th>Handle</Table.Th>
             <Table.Th>Status</Table.Th>
             <Table.Th>Devices</Table.Th>
+            <Table.Th title="May hold Abroad Devices, whose traffic all leaves through a domestic Exit">Abroad</Table.Th>
             <Table.Th>This period</Table.Th>
             <Table.Th>Quota</Table.Th>
             <Table.Th>Running out</Table.Th>
@@ -84,6 +86,19 @@ export function UsersScreen({ self }: { self: Me }) {
                       await api.POST("/v1/admin/users/{id}/device-cap", { ...p(u.id), body: { device_cap: cap } });
                       load();
                     }
+                  }}
+                />
+              </Table.Td>
+              <Table.Td>
+                <Checkbox
+                  size="xs"
+                  checked={u.abroad}
+                  aria-label="Abroad"
+                  onChange={async (e) => {
+                    const abroad = e.currentTarget.checked;
+                    if (!abroad && !confirm(`${u.handle}'s Abroad Devices stop connecting until you allow it again. They are kept, not revoked.`)) return;
+                    await api.POST("/v1/admin/users/{id}/abroad", { ...p(u.id), body: { abroad } });
+                    load();
                   }}
                 />
               </Table.Td>

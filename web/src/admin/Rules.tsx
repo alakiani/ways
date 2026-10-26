@@ -5,8 +5,8 @@ import { api } from "../api/client";
 import type { RuleInfo } from "./api";
 import { Screen, Status } from "./ui";
 
-// Rules: both shown; only the IR Rule's Tags and fallback change; the
-// default Rule is locked (ADR 0004).
+// Rules: all shown; only the IR Rule's Tags and fallback change; the
+// default Rule (ADR 0004) and the Abroad Rule (ADR 0014) are locked.
 export function RulesScreen() {
   const [rules, setRules] = useState<RuleInfo[]>([]);
   useEffect(() => {
@@ -32,7 +32,8 @@ function Locked({ rule }: { rule: RuleInfo }) {
           </Badge>
         </Group>
         <Text fz="sm">
-          {rule.set} → an Exit with {rule.required_tags.join(", ")}; otherwise {rule.fallback}.
+          {rule.source ? `Abroad Devices (${rule.source}), whatever the destination, ahead of every Rule` : rule.set} → an Exit with{" "}
+          {rule.required_tags.join(", ")}; otherwise {rule.fallback}.
         </Text>
       </Stack>
     </Paper>

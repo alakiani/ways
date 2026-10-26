@@ -191,7 +191,7 @@ func (c *Coordinator) bridgeState(ctx context.Context, quota map[string]quotaSta
 			// (ADR 0014). Its lookups go to the domestic resolvers.
 			b.AbroadRule = &protocol.Rule{ID: r.ID, Name: r.Name, Priority: r.Priority, Source: r.Source,
 				RequiredTags: r.RequiredTags, Fallback: r.Fallback}
-			b.AbroadUpstreams = c.Egress.IR.Resolvers
+			b.AbroadUpstreams = c.AbroadUpstreams
 			continue
 		}
 		b.Rules = append(b.Rules, protocol.Rule{ID: r.ID, Name: r.Name, Priority: r.Priority, SetHash: hashes[r.SetID],

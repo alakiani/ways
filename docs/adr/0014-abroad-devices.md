@@ -24,7 +24,8 @@ A User abroad who needs Iranian services, such as banks, payment gateways and st
 
 ## DNS
 
-- **Abroad Device lookups are resolved in Iran.** The Bridge resolver picks its upstream by the client's source address and sends Abroad Device lookups to the domestic resolvers the snapshot already carries for the `IR` egress check, with the Abroad Rule's mark, so they leave through a domestic Exit. Resolving them abroad would hand ArvanCloud-fronted sites a foreign edge and undo the point of the Device.
+- **Abroad Device lookups are resolved in Iran.** The Bridge resolver picks its upstream by the client's source address and sends Abroad Device lookups to domestic resolvers, by default the ones the `IR` egress check uses, with the Abroad Rule's mark, so they leave through a domestic Exit. Resolving them abroad would hand ArvanCloud-fronted sites a foreign edge and undo the point of the Device.
+- **These resolvers must be in the IR Destination Set.** The lookups leave the Abroad Bridge from its own Link address, not from the Abroad pool, so the domestic Exit receiving them routes them by destination. Domestic resolvers are on Iranian addresses, so the IR Rule keeps them there.
 - **Plain DNS, not DoT.** Inside a GRE Link the lookups cross the filter readable, the same exposure as the rest of an Abroad Device's traffic, which ADR 0009 accepted. The domestic resolvers see them either way.
 - **DoT on port 853 from an Abroad Device follows the Abroad Rule**, not the default Rule; port 53 is still redirected to the Bridge resolver.
 
@@ -40,7 +41,7 @@ A User abroad who needs Iranian services, such as banks, payment gateways and st
 
 An Agent that does not know a Rule can have a source would read the Abroad Rule as "`0.0.0.0/0`, requires `IR`, first", and send every User's traffic out of Iran. So:
 
-- **The Coordinator sends the Abroad Rule only to Agents whose reported version understands it**, and leaves it out for older ones. A deploy test checks that an old Agent receives none.
+- **The Abroad Rule travels in a snapshot field of its own**, `abroad_rule`, next to the list of Rules rather than in it. Agents ignore JSON fields they do not know, so an older Agent never receives it as a Rule. This replaces gating it on the reported Agent version, which a development build's version string could defeat, and gives the same guarantee without the Coordinator tracking versions. A test decodes a snapshot the way an older Agent does and finds only the destination Rules.
 - **Nodes are upgraded before the Coordinator** as well, as the normal procedure.
 
 ## Considered options

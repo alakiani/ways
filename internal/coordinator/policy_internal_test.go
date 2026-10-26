@@ -134,8 +134,8 @@ func TestAbroadRuleTravelsApartFromRules(t *testing.T) {
 	if ab == nil || ab.Source != "10.77.128.0/17" || ab.Fallback != protocol.FallbackDrop || !slices.Equal(ab.RequiredTags, []string{"IR"}) {
 		t.Fatalf("Abroad Rule = %+v", ab)
 	}
-	if !slices.Equal(b.AbroadUpstreams, m.c.Egress.IR.Resolvers) || len(b.AbroadUpstreams) == 0 {
-		t.Errorf("abroad upstreams = %v, want the domestic egress resolvers %v", b.AbroadUpstreams, m.c.Egress.IR.Resolvers)
+	if want := DefaultEgressTargets.IR.Resolvers; !slices.Equal(b.AbroadUpstreams, want) {
+		t.Errorf("abroad upstreams = %v, want the domestic egress resolvers %v", b.AbroadUpstreams, want)
 	}
 
 	body, _ := json.Marshal(b)

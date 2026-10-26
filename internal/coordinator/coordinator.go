@@ -48,6 +48,9 @@ type Coordinator struct {
 	Egress EgressTargets
 	// Upstreams are the resolvers abroad Bridges forward DNS to.
 	Upstreams []string
+	// AbroadUpstreams are the domestic resolvers Bridges send Abroad
+	// Devices' lookups to (ADR 0014); by default the IR egress check's.
+	AbroadUpstreams []string
 	// Scoring is pushed to every Bridge (ADR 0008).
 	Scoring protocol.Scoring
 	// PanelURL is where the panel is served; Invite links point into it.
@@ -91,7 +94,8 @@ type Coordinator struct {
 // New returns a Coordinator over s and c.
 func New(s *store.Store, c *ca.CA, log *slog.Logger) *Coordinator {
 	return &Coordinator{store: s, ca: c, log: log, LongPoll: 60 * time.Second,
-		LinkTiming: protocol.DefaultLinkTiming, Egress: DefaultEgressTargets, Upstreams: DefaultUpstreams, Scoring: protocol.DefaultScoring,
+		LinkTiming: protocol.DefaultLinkTiming, Egress: DefaultEgressTargets, Upstreams: DefaultUpstreams,
+		AbroadUpstreams: DefaultEgressTargets.IR.Resolvers, Scoring: protocol.DefaultScoring,
 		PanelURL: "https://wayfinder.ir", BridgeAddress: DefaultBridgeAddress, AbroadAddress: DefaultAbroadAddress,
 		Address: DefaultAddressSettings, SecureCookies: true,
 		Monitor: DefaultMonitorSettings, Backup: DefaultBackupSettings, mon: monitorState{poke: make(chan struct{}, 1)},

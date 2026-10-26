@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Alert, Badge, Button, Group, Paper, Text, ThemeIcon, Title } from "@mantine/core";
-import { IconChevronLeft, IconDeviceMobile, IconInfoCircle, IconPlus } from "@tabler/icons-react";
+import { IconChevronLeft, IconDeviceMobile, IconInfoCircle, IconPlus, IconWorld } from "@tabler/icons-react";
 import { api, type DeviceInfo, type Me, type MyUsage } from "../api/client";
 import { fa } from "../fa";
 import { QuotaCard } from "./Quota";
@@ -40,9 +40,16 @@ export function HomePage({ me }: { me: Me }) {
           </Text>
         </Title>
         {!full && (
-          <Button component="a" href="#/devices/new" leftSection={<IconPlus size={18} />}>
-            {fa.newDevice}
-          </Button>
+          <Group gap="xs">
+            {me.abroad && (
+              <Button component="a" href="#/devices/new-abroad" variant="light" leftSection={<IconWorld size={18} />}>
+                {fa.newAbroadDevice}
+              </Button>
+            )}
+            <Button component="a" href="#/devices/new" leftSection={<IconPlus size={18} />}>
+              {fa.newDevice}
+            </Button>
+          </Group>
         )}
       </Group>
       {full && (
@@ -59,16 +66,16 @@ export function HomePage({ me }: { me: Me }) {
         {live.map((d) => (
           <li key={d.id}>
             <Paper component="a" href={`#/devices/${d.id}`} className="device-row">
-              <ThemeIcon variant="light" size="lg" radius="md">
-                <IconDeviceMobile size={20} />
+              <ThemeIcon variant="light" size="lg" radius="md" aria-label={d.abroad ? fa.abroad : undefined}>
+                {d.abroad ? <IconWorld size={20} /> : <IconDeviceMobile size={20} />}
               </ThemeIcon>
               <div className="grow">
                 <Text fw={600} truncate>
                   {d.name}
                 </Text>
-                {d.recent_bytes > 0 && (
+                {(d.abroad || d.recent_bytes > 0) && (
                   <Text fz="xs" c="dimmed">
-                    {fa.usedRecently}
+                    {[d.abroad && fa.abroad, d.recent_bytes > 0 && fa.usedRecently].filter(Boolean).join(" · ")}
                   </Text>
                 )}
               </div>

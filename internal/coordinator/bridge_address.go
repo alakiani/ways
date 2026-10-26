@@ -3,6 +3,7 @@ package coordinator
 import (
 	"cmp"
 	"context"
+	"errors"
 	"fmt"
 	"maps"
 	"net/netip"
@@ -72,18 +73,49 @@ type addressState struct {
 	joins, removals int
 }
 
-// RunBridgeAddress probes every domestic Bridge, judges eligibility, and
-// keeps the Bridge Address's record to the eligible Bridges, every
-// ProbeEvery until ctx ends.
+// DefaultAbroadAddress is the hostname in every Abroad Device's config
+// (ADR 0014).
+const DefaultAbroadAddress = "abroad.wayfinder.ir"
+
+// addressBook is one of the two Bridge Addresses: its hostname, the
+// record it keeps, and what its loop remembers.
+type addressBook struct {
+	name  string // for logs
+	rec   store.Record
+	host  string
+	state *addressState
+}
+
+func (c *Coordinator) bridgeBook() addressBook {
+	return addressBook{"Bridge Address", store.BridgeRecord, c.BridgeAddress, &c.address}
+}
+
+func (c *Coordinator) abroadBook() addressBook {
+	return addressBook{"Abroad Bridge Address", store.AbroadRecord, c.AbroadAddress, &c.abroad}
+}
+
+func newAddressState() addressState {
+	return addressState{probes: map[string]protocol.ProbeResult{}, inelSince: map[string]time.Time{}, elSince: map[string]time.Time{},
+		reasons: map[string][]string{}}
+}
+
+// RunBridgeAddress keeps both Bridge Addresses' records to their eligible
+// Bridges, every ProbeEvery until ctx ends: the Bridge Address, whose
+// domestic Bridges the probe Device checks (ADR 0011), and the Abroad
+// Bridge Address, whose Abroad Bridges are judged by their own reports
+// (ADR 0014).
 func (c *Coordinator) RunBridgeAddress(ctx context.Context) {
 	if c.DNS == nil {
-		c.log.Warn("no DNS client: the Bridge Address's members are tracked but its record is not updated")
+		c.log.Warn("no DNS client: the Bridge Addresses' members are tracked but their records are not updated")
 	}
 	t := time.NewTicker(c.Address.ProbeEvery)
 	defer t.Stop()
 	for {
 		if err := c.addressRound(ctx); err != nil && ctx.Err() == nil {
 			c.log.Error("bridge address", "err", err)
+		}
+		if err := c.abroadRound(ctx); err != nil && ctx.Err() == nil {
+			c.log.Error("abroad bridge address", "err", err)
 		}
 		select {
 		case <-ctx.Done():
@@ -93,7 +125,8 @@ func (c *Coordinator) RunBridgeAddress(ctx context.Context) {
 	}
 }
 
-// addressRound is one round: probe, judge, plan the members, update DNS.
+// addressRound is one round of the Bridge Address: probe, judge, plan the
+// members, update DNS.
 func (c *Coordinator) addressRound(ctx context.Context) error {
 	p, err := c.prober(ctx)
 	if err != nil {
@@ -146,49 +179,88 @@ func (c *Coordinator) addressRound(ctx context.Context) error {
 	}
 
 	now := c.store.Now()
-	ids := make([]string, len(bridges))
-	names := map[string]string{}
-	s := &c.address
-	s.mu.Lock()
+	reasons := map[string][]string{}
+	c.address.mu.Lock()
 	for i, b := range bridges {
-		ids[i], names[b.ID] = b.ID, b.Name
-		s.probes[b.ID] = results[i]
-		reasons := ineligibility(results[i], health[b.ID], defaultRule, now, c.Address.ReportingWithin)
+		c.address.probes[b.ID] = results[i]
+		reasons[b.ID] = ineligibility(results[i], health[b.ID], defaultRule, now, c.Address.ReportingWithin)
 		if !results[i].OK {
 			c.log.Debug("probe failed", "node", b.Name, "err", results[i].Error)
 		}
+	}
+	c.address.mu.Unlock()
+	return c.updateAddress(ctx, c.bridgeBook(), bridges, health, reasons, now)
+}
+
+// abroadRound is one round of the Abroad Bridge Address (ADR 0014). There
+// is no probe: the probe Device sits inside Iran, on the wrong side of the
+// filter, so an Abroad Bridge is judged by its own reports.
+func (c *Coordinator) abroadRound(ctx context.Context) error {
+	bridges, health, err := c.abroadBridges(ctx)
+	if err != nil {
+		return err
+	}
+	abroadRule, err := c.abroadRuleID(ctx)
+	if err != nil {
+		return err
+	}
+	now := c.store.Now()
+	reasons := map[string][]string{}
+	for _, b := range bridges {
+		reasons[b.ID] = abroadIneligibility(health[b.ID], abroadRule, now, c.Address.ReportingWithin)
+	}
+	return c.updateAddress(ctx, c.abroadBook(), bridges, health, reasons, now)
+}
+
+// updateAddress takes a round's judgement of bridges, plans the members of
+// a Bridge Address, and updates its record and DNS.
+func (c *Coordinator) updateAddress(ctx context.Context, book addressBook, bridges []store.Node,
+	health map[string]*protocol.HealthStatus, reasons map[string][]string, now time.Time) error {
+	ids := make([]string, len(bridges))
+	names := map[string]string{}
+	s := book.state
+	s.mu.Lock()
+	for i, b := range bridges {
+		ids[i], names[b.ID] = b.ID, b.Name
 		_, was := s.inelSince[b.ID]
-		switch {
-		case len(reasons) == 0:
+		switch r := reasons[b.ID]; {
+		case len(r) == 0:
 			delete(s.inelSince, b.ID)
 			delete(s.reasons, b.ID)
 			if _, ok := s.elSince[b.ID]; !ok {
 				s.elSince[b.ID] = now
 			}
 			if was {
-				c.log.Info("Bridge became eligible", "node", b.Name)
+				c.log.Info("Bridge became eligible", "address", book.name, "node", b.Name)
 			}
 		default:
-			s.reasons[b.ID] = reasons
+			s.reasons[b.ID] = r
 			delete(s.elSince, b.ID)
 			if !was {
 				s.inelSince[b.ID] = now
-				c.log.Warn("Bridge became ineligible", "node", b.Name, "reasons", reasons, "probe", results[i].Error)
+				c.log.Warn("Bridge became ineligible", "address", book.name, "node", b.Name, "reasons", r)
+			}
+		}
+	}
+	for _, m := range []map[string]time.Time{s.inelSince, s.elSince} {
+		for id := range m {
+			if !slices.Contains(ids, id) {
+				delete(s.probes, id)
+				delete(s.inelSince, id)
+				delete(s.elSince, id)
+				delete(s.reasons, id)
 			}
 		}
 	}
 	for id := range s.probes {
 		if !slices.Contains(ids, id) {
 			delete(s.probes, id)
-			delete(s.inelSince, id)
-			delete(s.elSince, id)
-			delete(s.reasons, id)
 		}
 	}
 	inelSince, elSince := maps.Clone(s.inelSince), maps.Clone(s.elSince)
 	s.mu.Unlock()
 
-	stored, err := c.store.BridgeAddress(ctx)
+	stored, err := c.store.AddressMembers(ctx, book.rec)
 	if err != nil {
 		return err
 	}
@@ -201,8 +273,8 @@ func (c *Coordinator) addressRound(ctx context.Context) error {
 		if slices.Contains(next, id) {
 			continue
 		}
-		c.log.Warn("Bridge removed from the Bridge Address", "node", cmp.Or(names[id], id))
-		if err := c.store.LeaveBridgeAddress(ctx, id); err != nil {
+		c.log.Warn("Bridge removed from the "+book.name, "node", cmp.Or(names[id], id))
+		if err := c.store.LeaveAddress(ctx, book.rec, id); err != nil {
 			return err
 		}
 		s.mu.Lock()
@@ -213,8 +285,8 @@ func (c *Coordinator) addressRound(ctx context.Context) error {
 		if slices.Contains(members, id) {
 			continue
 		}
-		c.log.Info("Bridge joined the Bridge Address", "node", names[id])
-		if err := c.store.JoinBridgeAddress(ctx, id); err != nil {
+		c.log.Info("Bridge joined the "+book.name, "node", names[id])
+		if err := c.store.JoinAddress(ctx, book.rec, id); err != nil {
 			return err
 		}
 		s.mu.Lock()
@@ -229,34 +301,34 @@ func (c *Coordinator) addressRound(ctx context.Context) error {
 			addrs = append(addrs, a)
 		}
 	}
-	return c.syncAddressRecord(ctx, addrs)
+	return c.syncAddressRecord(ctx, book, addrs)
 }
 
-// syncAddressRecord makes the Bridge Address's record hold addrs, unless
-// it already does or addrs is empty.
-func (c *Coordinator) syncAddressRecord(ctx context.Context, addrs []netip.Addr) error {
+// syncAddressRecord makes a Bridge Address's record hold addrs, unless it
+// already does or addrs is empty.
+func (c *Coordinator) syncAddressRecord(ctx context.Context, book addressBook, addrs []netip.Addr) error {
 	if c.DNS == nil || len(addrs) == 0 {
 		return nil
 	}
 	slices.SortFunc(addrs, netip.Addr.Compare)
 	want := fmt.Sprint(addrs)
-	s := &c.address
+	s := book.state
 	s.mu.Lock()
 	published := s.published
 	s.mu.Unlock()
 	if want == published {
 		return nil
 	}
-	err := c.DNS.SetA(ctx, c.BridgeAddress, addrs)
+	err := c.DNS.SetA(ctx, book.host, addrs)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if err != nil {
 		s.dnsFailures++
-		return fmt.Errorf("%s: %w", c.BridgeAddress, err)
+		return fmt.Errorf("%s: %w", book.host, err)
 	}
 	s.dnsFailures = 0
 	s.published = want
-	c.log.Info("Bridge Address record updated", "host", c.BridgeAddress, "addrs", addrs)
+	c.log.Info(book.name+" record updated", "host", book.host, "addrs", addrs)
 	return nil
 }
 
@@ -276,6 +348,19 @@ func ineligibility(p protocol.ProbeResult, h *protocol.HealthStatus, defaultRule
 		out = append(out, "no default-Rule Path")
 	}
 	return out
+}
+
+// abroadIneligibility lists why an Abroad Bridge may not be in the Abroad
+// Bridge Address; none means it may (ADR 0014).
+func abroadIneligibility(h *protocol.HealthStatus, abroadRule uint64, now time.Time, reportingWithin time.Duration) []string {
+	if h == nil || now.Sub(h.ReceivedAt) > reportingWithin {
+		return []string{"Agent not reporting"}
+	}
+	i := slices.IndexFunc(h.Paths, func(r protocol.RuleHealth) bool { return r.RuleID == abroadRule })
+	if i < 0 || h.Paths[i].Mode == "" || h.Paths[i].Mode == "fallback" {
+		return []string{"no Abroad-Rule Path"}
+	}
+	return nil
 }
 
 // planMembers works out which Bridges the Bridge Address holds next (ADR
@@ -315,16 +400,31 @@ func planMembers(members, bridges []string, elSince, inelSince map[string]time.T
 // BridgeAddressStatus reports the Bridges the Bridge Address holds and the
 // probe's view of every domestic Bridge, for the status board.
 func (c *Coordinator) BridgeAddressStatus(ctx context.Context) (protocol.AddressStatus, error) {
-	st := protocol.AddressStatus{Host: c.BridgeAddress, Bridges: []protocol.AddressBridge{}}
 	bridges, health, err := c.domesticBridges(ctx)
 	if err != nil {
-		return st, err
+		return protocol.AddressStatus{}, err
 	}
-	stored, err := c.store.BridgeAddress(ctx)
+	return c.addressStatus(ctx, c.bridgeBook(), bridges, health)
+}
+
+// AbroadAddressStatus reports the Bridges the Abroad Bridge Address holds
+// and how each Abroad Bridge is judged (ADR 0014).
+func (c *Coordinator) AbroadAddressStatus(ctx context.Context) (protocol.AddressStatus, error) {
+	bridges, health, err := c.abroadBridges(ctx)
+	if err != nil {
+		return protocol.AddressStatus{}, err
+	}
+	return c.addressStatus(ctx, c.abroadBook(), bridges, health)
+}
+
+func (c *Coordinator) addressStatus(ctx context.Context, book addressBook, bridges []store.Node,
+	health map[string]*protocol.HealthStatus) (protocol.AddressStatus, error) {
+	st := protocol.AddressStatus{Host: book.host, Bridges: []protocol.AddressBridge{}}
+	stored, err := c.store.AddressMembers(ctx, book.rec)
 	if err != nil {
 		return st, err
 	}
-	s := &c.address
+	s := book.state
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	st.Joins, st.Removals, st.Published = s.joins, s.removals, s.published != ""
@@ -337,6 +437,8 @@ func (c *Coordinator) BridgeAddressStatus(ctx context.Context) (protocol.Address
 		if p, ok := s.probes[b.ID]; ok {
 			ab.Probe = &p
 			ab.Eligible = len(ab.Reasons) == 0
+		} else if _, ok := s.elSince[b.ID]; ok {
+			ab.Eligible = true // judged without a probe
 		}
 		if t, ok := s.inelSince[b.ID]; ok {
 			ab.IneligibleSince = &t
@@ -347,8 +449,18 @@ func (c *Coordinator) BridgeAddressStatus(ctx context.Context) (protocol.Address
 }
 
 // domesticBridges are the Bridges tagged IR, by name, with every Node's
-// latest health report. Only they face Devices (ADR 0011).
+// latest health report. Only they face ordinary Devices (ADR 0011).
 func (c *Coordinator) domesticBridges(ctx context.Context) ([]store.Node, map[string]*protocol.HealthStatus, error) {
+	return c.bridgesWhere(ctx, isIR)
+}
+
+// abroadBridges are the Bridges not tagged IR, by name, with every Node's
+// latest health report: the Abroad Bridges (ADR 0014).
+func (c *Coordinator) abroadBridges(ctx context.Context) ([]store.Node, map[string]*protocol.HealthStatus, error) {
+	return c.bridgesWhere(ctx, func(n store.Node) bool { return !isIR(n) })
+}
+
+func (c *Coordinator) bridgesWhere(ctx context.Context, keep func(store.Node) bool) ([]store.Node, map[string]*protocol.HealthStatus, error) {
 	nodes, err := c.store.Nodes(ctx)
 	if err != nil {
 		return nil, nil, err
@@ -356,7 +468,7 @@ func (c *Coordinator) domesticBridges(ctx context.Context) ([]store.Node, map[st
 	var out []store.Node
 	health := map[string]*protocol.HealthStatus{}
 	for _, n := range nodes {
-		if !isBridge(n) || !isIR(n) {
+		if !isBridge(n) || !keep(n) {
 			continue
 		}
 		out = append(out, n)
@@ -373,6 +485,19 @@ func (c *Coordinator) defaultRuleID(ctx context.Context) (uint64, error) {
 		return 0, err
 	}
 	return rules[len(rules)-1].ID, nil // in priority order, the default Rule last
+}
+
+func (c *Coordinator) abroadRuleID(ctx context.Context) (uint64, error) {
+	rules, err := c.store.Rules(ctx)
+	if err != nil {
+		return 0, err
+	}
+	for _, r := range rules {
+		if r.Source != "" {
+			return r.ID, nil
+		}
+	}
+	return 0, errors.New("no Abroad Rule")
 }
 
 func (c *Coordinator) devicePort(ctx context.Context) (uint16, error) {

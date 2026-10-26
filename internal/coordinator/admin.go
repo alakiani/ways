@@ -153,6 +153,9 @@ func (c *Coordinator) adminOverview(w http.ResponseWriter, r *http.Request) {
 	if err == nil {
 		o.BridgeAddress, err = c.BridgeAddressStatus(ctx)
 	}
+	if err == nil {
+		o.AbroadAddress, err = c.AbroadAddressStatus(ctx)
+	}
 	if err != nil {
 		c.internalError(w, err)
 		return
@@ -437,7 +440,7 @@ func (c *Coordinator) ruleInfos(ctx context.Context) ([]protocol.RuleInfo, error
 	out := []protocol.RuleInfo{}
 	for _, rl := range rules {
 		out = append(out, protocol.RuleInfo{ID: rl.ID, Name: rl.Name, Priority: rl.Priority, Set: names[rl.SetID],
-			RequiredTags: rl.RequiredTags, Fallback: rl.Fallback, Builtin: rl.Builtin})
+			RequiredTags: rl.RequiredTags, Fallback: rl.Fallback, Builtin: rl.Builtin, Source: rl.Source})
 	}
 	return out, nil
 }
@@ -474,7 +477,7 @@ func (c *Coordinator) adminEditRule(w http.ResponseWriter, r *http.Request) {
 	}
 	err = c.store.UpdateRule(r.Context(), id, tags, string(req.Fallback))
 	if errors.Is(err, store.ErrNotFound) {
-		writeError(w, http.StatusForbidden, "only the IR Rule can be changed; the default Rule is locked")
+		writeError(w, http.StatusForbidden, "only the IR Rule can be changed; the default and Abroad Rules are locked")
 		return
 	}
 	if err == nil {

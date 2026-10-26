@@ -303,6 +303,9 @@
       },
       "DeviceInfo": {
         "properties": {
+          "abroad": {
+            "type": "boolean"
+          },
           "address": {
             "type": "string"
           },
@@ -333,6 +336,7 @@
           }
         },
         "required": [
+          "abroad",
           "address",
           "created_at",
           "id",
@@ -835,6 +839,9 @@
       },
       "Me": {
         "properties": {
+          "abroad": {
+            "type": "boolean"
+          },
           "admin": {
             "type": "boolean"
           },
@@ -858,6 +865,7 @@
           }
         },
         "required": [
+          "abroad",
           "admin",
           "device_cap",
           "device_count",
@@ -916,6 +924,9 @@
       },
       "NewDevice": {
         "properties": {
+          "abroad": {
+            "type": "boolean"
+          },
           "name": {
             "type": "string"
           },
@@ -1131,6 +1142,9 @@
       },
       "Overview": {
         "properties": {
+          "abroad_address": {
+            "$ref": "#/components/schemas/AddressStatus"
+          },
           "backup": {
             "$ref": "#/components/schemas/BackupStatus"
           },
@@ -1163,6 +1177,7 @@
           }
         },
         "required": [
+          "abroad_address",
           "backup",
           "bridge_address",
           "links",
@@ -1364,6 +1379,9 @@
           },
           "set": {
             "type": "string"
+          },
+          "source": {
+            "type": "string"
           }
         },
         "required": [
@@ -1374,6 +1392,17 @@
           "priority",
           "required_tags",
           "set"
+        ],
+        "type": "object"
+      },
+      "SetAbroad": {
+        "properties": {
+          "abroad": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "abroad"
         ],
         "type": "object"
       },
@@ -1644,6 +1673,9 @@
       },
       "UserInfo": {
         "properties": {
+          "abroad": {
+            "type": "boolean"
+          },
           "admin": {
             "type": "boolean"
           },
@@ -1692,6 +1724,7 @@
           }
         },
         "required": [
+          "abroad",
           "admin",
           "device_cap",
           "device_count",
@@ -2715,6 +2748,60 @@
           }
         ],
         "summary": "Delete a User with their Devices and usage"
+      }
+    },
+    "/v1/admin/users/{id}/abroad": {
+      "post": {
+        "description": "Admins only, with a session that proved TOTP.",
+        "operationId": "postAdminUsersIdAbroad",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetAbroad"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserInfo"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "An error"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Give a User the abroad permission or take it away; without it their Abroad Devices are cut off, not revoked"
       }
     },
     "/v1/admin/users/{id}/device-cap": {

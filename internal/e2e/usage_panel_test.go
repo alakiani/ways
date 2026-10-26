@@ -77,7 +77,7 @@ func TestUserPanelUsage(t *testing.T) {
 	device := func(userID, name string) store.UserDevice {
 		t.Helper()
 		key, _ := wgtypes.GeneratePrivateKey()
-		d, err := s.AddDevice(ctx, userID, name, key.PublicKey().String(), "")
+		d, err := s.AddDevice(ctx, userID, name, key.PublicKey().String(), "", false)
 		if err != nil {
 			t.Fatal(err)
 		}

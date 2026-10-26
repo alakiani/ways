@@ -44,6 +44,8 @@ type Me struct {
 	MFA         bool `json:"mfa"`
 	DeviceCap   int  `json:"device_cap"`
 	DeviceCount int  `json:"device_count"`
+	// Abroad is the permission to hold Abroad Devices (ADR 0014).
+	Abroad bool `json:"abroad"`
 }
 
 // ChangePassword replaces the signed-in User's password.
@@ -68,6 +70,9 @@ type TOTPCode struct {
 type NewDevice struct {
 	Name      string `json:"name"`
 	PublicKey string `json:"public_key"`
+	// Abroad asks for an Abroad Device, whose traffic all leaves through a
+	// domestic Exit; only a User with the abroad permission may (ADR 0014).
+	Abroad bool `json:"abroad,omitempty"`
 }
 
 // DeviceInfo is a Device as its owner and Admins see it.
@@ -77,6 +82,7 @@ type DeviceInfo struct {
 	Address   string    `json:"address"`
 	CreatedAt time.Time `json:"created_at"`
 	Revoked   bool      `json:"revoked"`
+	Abroad    bool      `json:"abroad"` // an Abroad Device (ADR 0014)
 	// State is the effective state: active, blocked or throttled.
 	State  string `json:"state"`
 	Reason string `json:"reason,omitempty"`
@@ -119,7 +125,8 @@ type DeviceConfig struct {
 	Endpoint        Endpoint `json:"endpoint"`
 }
 
-// Endpoint is where the config reaches a Bridge: the Bridge Address.
+// Endpoint is where the config reaches a Bridge: the Bridge Address, or
+// the Abroad Bridge Address for an Abroad Device (ADR 0014).
 type Endpoint struct {
 	Host string `json:"host"`
 	Port int    `json:"port"`
@@ -171,6 +178,13 @@ type UserInfo struct {
 	RunningOut RunningOut `json:"running_out"`
 	Rate       uint64     `json:"rate,omitempty"` // when slow: bytes per second
 	Refills    int        `json:"refills"`        // Refills held: not redeemed and not expired
+	Abroad     bool       `json:"abroad"`         // may hold Abroad Devices (ADR 0014)
+}
+
+// SetAbroad gives a User the abroad permission or takes it away. Taking it
+// away cuts their Abroad Devices off without revoking them (ADR 0014).
+type SetAbroad struct {
+	Abroad bool `json:"abroad"`
 }
 
 // RunningOut is what happens to a User's Devices once they have used up

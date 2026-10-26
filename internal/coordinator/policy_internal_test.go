@@ -1,10 +1,12 @@
 package coordinator
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -116,5 +118,68 @@ func TestIRFeedGates(t *testing.T) {
 	}
 	if got := irSet(); !strings.Contains(got, "31.0.0.0/16") {
 		t.Errorf("IR set = %q after a small change", got)
+	}
+}
+
+// The Abroad Rule travels apart from Rules: an Agent from before it, which
+// knows no abroad_rule field, sees only the destination Rules and never
+// reads it as "everything, requires IR, first" (ADR 0014).
+func TestAbroadRuleTravelsApartFromRules(t *testing.T) {
+	m := newMesh(t, "ir1")
+	b := m.state("ir1").Bridge
+	if len(b.Rules) != 2 || b.Rules[0].Name != "IR" || b.Rules[1].Name != "Default" {
+		t.Errorf("rules = %+v", b.Rules)
+	}
+	ab := b.AbroadRule
+	if ab == nil || ab.Source != "10.77.128.0/17" || ab.Fallback != protocol.FallbackDrop || !slices.Equal(ab.RequiredTags, []string{"IR"}) {
+		t.Fatalf("Abroad Rule = %+v", ab)
+	}
+	if !slices.Equal(b.AbroadUpstreams, m.c.Egress.IR.Resolvers) || len(b.AbroadUpstreams) == 0 {
+		t.Errorf("abroad upstreams = %v, want the domestic egress resolvers %v", b.AbroadUpstreams, m.c.Egress.IR.Resolvers)
+	}
+
+	body, _ := json.Marshal(b)
+	var old struct { // BridgeState as Agents before ADR 0014 decode it
+		Rules []struct {
+			Name    string `json:"name"`
+			SetHash string `json:"set_hash"`
+		} `json:"rules"`
+	}
+	if err := json.Unmarshal(body, &old); err != nil {
+		t.Fatal(err)
+	}
+	if len(old.Rules) != 2 || old.Rules[0].Name != "IR" || old.Rules[0].SetHash == "" {
+		t.Errorf("an older Agent sees rules %+v", old.Rules)
+	}
+}
+
+// An Abroad Device reaches the Bridges only while its User has the abroad
+// permission; taking it away keeps the Device (ADR 0014).
+func TestAbroadDevicesNeedThePermission(t *testing.T) {
+	m := newMesh(t, "ir1")
+	u, _ := m.s.CreateUser(bg, "maryam")
+	m.s.SetUserAbroad(bg, u.ID, true)
+	ab, _ := m.s.AddDevice(bg, u.ID, "phone abroad", "pub-abroad", "", true)
+	m.s.AddDevice(bg, u.ID, "phone", "pub-phone", "", false)
+	m.c.Reconcile(bg)
+	has := func(key string) bool {
+		return slices.ContainsFunc(m.state("ir1").Bridge.Devices, func(d protocol.Device) bool { return d.PublicKey == key })
+	}
+	if !has("pub-abroad") || !has("pub-phone") {
+		t.Fatalf("devices = %+v", m.state("ir1").Bridge.Devices)
+	}
+
+	m.s.SetUserAbroad(bg, u.ID, false)
+	m.c.Reconcile(bg)
+	if has("pub-abroad") || !has("pub-phone") {
+		t.Errorf("without the permission: devices = %+v", m.state("ir1").Bridge.Devices)
+	}
+	if d, _ := m.s.UserDevice(bg, ab.ID); d.Revoked {
+		t.Error("the Abroad Device was revoked")
+	}
+	m.s.SetUserAbroad(bg, u.ID, true)
+	m.c.Reconcile(bg)
+	if !has("pub-abroad") {
+		t.Error("granting the permission again did not restore the Abroad Device")
 	}
 }

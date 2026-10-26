@@ -384,7 +384,7 @@ pause "Press Enter once you've saved it with your providers."
 
 # ── 2 ─────────────────────────────────────────────────────────────────────
 stage "Abroad Node 1"
-say "Rent the first abroad VM. It will be an Exit."
+say "Rent the first abroad VM. It will be an Exit, and an Abroad Bridge for Abroad Devices."
 step "Any provider outside Iran; 1–2 vCPU, 1–2 GB RAM, generous traffic, and a public IPv4."
 step "Image: Ubuntu 26.04. Add your SSH key when creating it."
 step "If the provider has a cloud firewall, allow inbound UDP (all ports), IP protocol 47 (GRE), TCP 22,"

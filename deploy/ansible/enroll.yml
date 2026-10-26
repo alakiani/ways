@@ -128,8 +128,9 @@
         - { src: "{{ playbook_dir }}/../systemd/ways-awg@.service", dest: "ways-awg@.service" }
       register: units
 
-    # Idempotent: an enrolled Node gets no token unless reenroll is set, and
-    # a Node that exists with other Roles or Tags is refused (409).
+    # Idempotent: an enrolled Node gets no token unless reenroll is set. A
+    # Node that exists with other Tags is refused (409); other Roles are
+    # taken (ADR 0014).
     - name: Create the Node, or get a fresh enrollment token for it
       ansible.builtin.uri:
         url: "{{ ways_api_url }}/v1/nodes"

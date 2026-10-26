@@ -113,7 +113,7 @@ func TestAdminPanel(t *testing.T) {
 			}
 		}
 		key, _ := wgtypes.GeneratePrivateKey()
-		dev, err := co.store.AddDevice(ctx, acct.ID, "phone", key.PublicKey().String(), "")
+		dev, err := co.store.AddDevice(ctx, acct.ID, "phone", key.PublicKey().String(), "", false)
 		if err != nil {
 			t.Fatal(err)
 		}

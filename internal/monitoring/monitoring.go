@@ -97,6 +97,16 @@ func rules(t Timing) []rule {
 			0, "info", "A Bridge joined the Bridge Address"},
 		{"BridgeAddressDownToOneBridge", `ways_bridge_address_members == 1`,
 			t.OneBridgeLeft, "critical", "The Bridge Address holds only one Bridge"},
+		// With only two Abroad Bridges, losing one is a warning; losing every
+		// one, while any exists, is what pages (ADR 0014).
+		{"AbroadBridgeRemovedFromAbroadAddress", `ways_abroad_address_member == 0`,
+			0, "warning", "Abroad Bridge {{ $labels.node }} is out of the Abroad Bridge Address"},
+		{"AbroadBridgeReturnedToAbroadAddress", fmt.Sprintf(`increase(ways_abroad_address_joins_total[%s]) > 0`, duration(t.EventWindow)),
+			0, "info", "An Abroad Bridge joined the Abroad Bridge Address"},
+		{"AbroadAddressDownToOneBridge", `ways_abroad_address_members == 1 and ways_abroad_bridges > 1`,
+			t.OneBridgeLeft, "warning", "The Abroad Bridge Address holds only one Abroad Bridge"},
+		{"NoEligibleAbroadBridge", `ways_abroad_address_eligible_bridges == 0 and ways_abroad_bridges > 0`,
+			t.OneBridgeLeft, "critical", "No Abroad Bridge can carry Abroad Devices to a domestic Exit"},
 		{"ArvanCloudDNSFailing", `ways_arvan_consecutive_failures >= 3`,
 			0, "warning", "ArvanCloud's DNS API failed {{ $value }} times in a row"},
 		{"ProbeFailing", `ways_probe_ok == 0`,

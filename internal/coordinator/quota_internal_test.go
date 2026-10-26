@@ -13,21 +13,25 @@ import (
 func TestEffectiveStateRanksItsReasons(t *testing.T) {
 	out, slow := quotaState{ranOut: true}, quotaState{ranOut: true, rate: 125_000}
 	for _, tc := range []struct {
-		revoked, suspended bool
-		quota              quotaState
-		state              EffectiveState
-		reason             string
+		revoked, suspended, abroadDenied bool
+		quota                            quotaState
+		state                            EffectiveState
+		reason                           string
 	}{
-		{false, false, quotaState{}, StateActive, ""},
-		{false, false, out, StateBlocked, "quota used up"},
-		{false, false, slow, StateThrottled, "quota used up"},
-		{false, true, out, StateBlocked, "user suspended"},
-		{false, true, slow, StateBlocked, "user suspended"},
-		{true, true, out, StateBlocked, "device revoked"},
-		{true, false, slow, StateBlocked, "device revoked"},
+		{false, false, false, quotaState{}, StateActive, ""},
+		{false, false, false, out, StateBlocked, "quota used up"},
+		{false, false, false, slow, StateThrottled, "quota used up"},
+		{false, true, false, out, StateBlocked, "user suspended"},
+		{false, true, false, slow, StateBlocked, "user suspended"},
+		{true, true, false, out, StateBlocked, "device revoked"},
+		{true, false, false, slow, StateBlocked, "device revoked"},
+		// An Abroad Device whose User lost the permission (ADR 0014).
+		{false, false, true, quotaState{}, StateBlocked, "abroad not allowed"},
+		{false, false, true, slow, StateBlocked, "abroad not allowed"},
+		{false, true, true, quotaState{}, StateBlocked, "user suspended"},
 	} {
-		if st, reason := effectiveState(tc.revoked, tc.suspended, tc.quota); st != tc.state || reason != tc.reason {
-			t.Errorf("effectiveState(%v, %v, %+v) = %s, %q; want %s, %q", tc.revoked, tc.suspended, tc.quota, st, reason, tc.state, tc.reason)
+		if st, reason := effectiveState(tc.revoked, tc.suspended, tc.abroadDenied, tc.quota); st != tc.state || reason != tc.reason {
+			t.Errorf("effectiveState(%v, %v, %v, %+v) = %s, %q; want %s, %q", tc.revoked, tc.suspended, tc.abroadDenied, tc.quota, st, reason, tc.state, tc.reason)
 		}
 	}
 }

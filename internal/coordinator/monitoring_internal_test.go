@@ -87,6 +87,7 @@ func TestCoordinatorMetrics(t *testing.T) {
 		"ways_db_size_bytes ",
 		`ways_irfeed_last_rejected{set="Iran"} 0`,
 		"ways_bridge_address_eligible_bridges 0",
+		`ways_bridge_unlisted{node="ir1"} 0`,
 		"ways_abroad_bridges 1", // ab1 holds both Roles
 		"ways_abroad_address_members 0",
 		"ways_arvan_consecutive_failures 0",

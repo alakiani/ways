@@ -129,6 +129,16 @@ func TestAdminPanel(t *testing.T) {
 	m.startAgent("ir1", []protocol.Role{protocol.RoleBridge}, []string{"IR"})
 	m.startAgent("ab1", []protocol.Role{protocol.RoleExit}, nil)
 
+	// ir2, a domestic Bridge with no Agent in the Bridge Address's record,
+	// so the browser may unlist ir1 (ADR 0015).
+	ir2, err := co.store.CreateNode(ctx, "ir2", []protocol.Role{protocol.RoleBridge}, []string{"IR"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := co.store.JoinAddress(ctx, store.BridgeRecord, ir2.ID); err != nil {
+		t.Fatal(err)
+	}
+
 	// An alert no Exit could relay waits on the banner (ADR 0006).
 	alert, _ := co.store.QueueAlert(ctx, "WAYS\nFIRING critical NodeUnreachable: Node ab9 is unreachable")
 	co.store.AlertFailed(ctx, alert, "no healthy Exit")
@@ -196,6 +206,9 @@ func TestAdminPanel(t *testing.T) {
 	}
 	if _, err := co.store.NodeByName(ctx, "ab9"); err == nil {
 		t.Error("ab9 was not deleted")
+	}
+	if ir1, err := co.store.NodeByName(ctx, "ir1"); err != nil || !ir1.Unlisted {
+		t.Errorf("ir1 = %+v, %v; want unlisted", ir1, err)
 	}
 	if ts, _ := co.store.Transports(ctx); len(ts) != 3 {
 		t.Errorf("transports = %v, want all three back on", ts)

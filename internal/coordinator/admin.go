@@ -41,7 +41,7 @@ func (c *Coordinator) loadAdminView(ctx context.Context) (adminView, error) {
 }
 
 func (c *Coordinator) nodeTile(ctx context.Context, v adminView, n store.Node) protocol.NodeTile {
-	t := protocol.NodeTile{ID: n.ID, Name: n.Name, Roles: n.Roles, Tags: n.Tags, Enrolled: n.Enrolled()}
+	t := protocol.NodeTile{ID: n.ID, Name: n.Name, Roles: n.Roles, Tags: n.Tags, Enrolled: n.Enrolled(), Unlisted: n.Unlisted}
 	if snap, err := c.store.LatestSnapshot(ctx, n.ID); err == nil {
 		t.LatestVersion = snap.Version
 	}
@@ -353,6 +353,34 @@ func (c *Coordinator) adminEditNode(w http.ResponseWriter, r *http.Request) {
 	}
 	n, _ := c.store.Node(r.Context(), r.PathValue("id"))
 	writeJSON(w, http.StatusOK, c.nodeStatus(r.Context(), n))
+}
+
+// adminUnlistNode unlists a domestic Bridge from the Bridge Address or
+// lists it again (ADR 0015).
+func (c *Coordinator) adminUnlistNode(w http.ResponseWriter, r *http.Request) {
+	var req protocol.SetUnlisted
+	if !decode(w, r, &req) {
+		return
+	}
+	ctx := r.Context()
+	n, err := c.Unlist(ctx, r.PathValue("id"), req.Unlisted)
+	switch {
+	case errors.Is(err, store.ErrNotFound):
+		writeError(w, http.StatusNotFound, "no such Node")
+		return
+	case errors.Is(err, errNotDomesticBridge), errors.Is(err, errLastBridge):
+		writeError(w, http.StatusConflict, err.Error())
+		return
+	case err != nil:
+		c.internalError(w, err)
+		return
+	}
+	v, err := c.loadAdminView(ctx)
+	if err != nil {
+		c.internalError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, c.nodeTile(ctx, v, n))
 }
 
 func (c *Coordinator) adminDeleteNode(w http.ResponseWriter, r *http.Request) {

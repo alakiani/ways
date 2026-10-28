@@ -124,6 +124,9 @@ type Node struct {
 	CreatedAt  time.Time
 	// LinkPublicKey is the Node's Link key, empty until its Agent reports it.
 	LinkPublicKey string
+	// Unlisted is set while an Admin keeps the Bridge out of the Bridge
+	// Address (ADR 0015).
+	Unlisted bool
 }
 
 // Enrolled reports whether the Node holds a client certificate.
@@ -154,13 +157,25 @@ func (s *Store) UpdateNode(ctx context.Context, id string, roles []protocol.Role
 	return nil
 }
 
-const nodeColumns = `id, name, roles, tags, coalesce(cert_serial, ''), created_at, coalesce(link_public_key, '')`
+// SetNodeUnlisted unlists a Node from the Bridge Address or lists it again.
+func (s *Store) SetNodeUnlisted(ctx context.Context, id string, unlisted bool) error {
+	res, err := s.db.ExecContext(ctx, `UPDATE nodes SET unlisted = ? WHERE id = ?`, unlisted, id)
+	if err != nil {
+		return err
+	}
+	if k, _ := res.RowsAffected(); k == 0 {
+		return fmt.Errorf("node %s: %w", id, ErrNotFound)
+	}
+	return nil
+}
+
+const nodeColumns = `id, name, roles, tags, coalesce(cert_serial, ''), created_at, coalesce(link_public_key, ''), unlisted`
 
 func scanNode(row interface{ Scan(...any) error }) (Node, error) {
 	var n Node
 	var roles, tags string
 	var created int64
-	if err := row.Scan(&n.ID, &n.Name, &roles, &tags, &n.CertSerial, &created, &n.LinkPublicKey); err != nil {
+	if err := row.Scan(&n.ID, &n.Name, &roles, &tags, &n.CertSerial, &created, &n.LinkPublicKey, &n.Unlisted); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return Node{}, ErrNotFound
 		}

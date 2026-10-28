@@ -1,9 +1,11 @@
 package store_test
 
 import (
+	"errors"
 	"testing"
 	"time"
 
+	"github.com/alakiani/ways/internal/protocol"
 	"github.com/alakiani/ways/internal/store"
 )
 
@@ -43,5 +45,35 @@ func TestAbroadAddressIsASeparateRecord(t *testing.T) {
 	}
 	if got, _ := s.AddressMembers(ctx, store.AbroadRecord); len(got) != 1 || got[0].NodeID != "nd_9" {
 		t.Errorf("Abroad Bridge Address = %+v", got)
+	}
+}
+
+// An Admin's unlisting is kept with the Node, and editing its Roles and
+// Tags leaves it alone (ADR 0015).
+func TestUnlistNode(t *testing.T) {
+	s := open(t, newClock())
+	n, err := s.CreateNode(ctx, "ir1", []protocol.Role{protocol.RoleBridge}, []string{"IR"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n.Unlisted {
+		t.Fatal("a new Node starts unlisted")
+	}
+	if err := s.SetNodeUnlisted(ctx, n.ID, true); err != nil {
+		t.Fatal(err)
+	}
+	s.UpdateNode(ctx, n.ID, []protocol.Role{protocol.RoleBridge, protocol.RoleExit}, []string{"IR"})
+	if got, _ := s.Node(ctx, n.ID); !got.Unlisted {
+		t.Errorf("after unlisting and an edit: %+v", got)
+	}
+	if nodes, _ := s.Nodes(ctx); len(nodes) != 1 || !nodes[0].Unlisted {
+		t.Errorf("Nodes = %+v", nodes)
+	}
+	s.SetNodeUnlisted(ctx, n.ID, false)
+	if got, _ := s.Node(ctx, n.ID); got.Unlisted {
+		t.Errorf("after listing again: %+v", got)
+	}
+	if err := s.SetNodeUnlisted(ctx, "nd_none", true); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("unknown Node: %v", err)
 	}
 }

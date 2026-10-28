@@ -39,8 +39,12 @@ An ordered chain of Links from a Bridge to an Exit that a Device's traffic follo
 _Avoid_: Route, circuit, chain
 
 **Bridge Address**:
-The one hostname in every Device's config. Each lookup of it answers with one eligible domestic Bridge, taking turns among them.
+The one hostname in every Device's config. Each lookup of it answers with one eligible domestic Bridge that is not Unlisted, taking turns among them.
 _Avoid_: Endpoint Slot, pool, entry, gateway, endpoint
+
+**Unlisted Bridge**:
+A domestic Bridge an Admin has taken out of the Bridge Address. It stays in the mesh, carrying other Bridges' traffic and serving as an Exit, but no lookup of the Bridge Address answers with it.
+_Avoid_: Hidden Bridge, drained Bridge, disabled Bridge, held-out Bridge
 
 **Abroad Bridge**:
 A Bridge outside the filter that Abroad Devices connect to. It is also an Exit, with no `IR` Tag.

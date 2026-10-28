@@ -115,12 +115,16 @@
               "type": "string"
             },
             "type": "array"
+          },
+          "unlisted": {
+            "type": "boolean"
           }
         },
         "required": [
           "eligible",
           "in_record",
-          "name"
+          "name",
+          "unlisted"
         ],
         "type": "object"
       },
@@ -1106,6 +1110,9 @@
               "type": "string"
             },
             "type": "array"
+          },
+          "unlisted": {
+            "type": "boolean"
           }
         },
         "required": [
@@ -1115,7 +1122,8 @@
           "latest_version",
           "name",
           "roles",
-          "tags"
+          "tags",
+          "unlisted"
         ],
         "type": "object"
       },
@@ -1486,6 +1494,17 @@
         },
         "required": [
           "running_out"
+        ],
+        "type": "object"
+      },
+      "SetUnlisted": {
+        "properties": {
+          "unlisted": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "unlisted"
         ],
         "type": "object"
       },
@@ -2166,6 +2185,60 @@
           }
         ],
         "summary": "Change a Node's Roles and Tags"
+      }
+    },
+    "/v1/admin/nodes/{id}/unlisted": {
+      "post": {
+        "description": "Admins only, with a session that proved TOTP.",
+        "operationId": "postAdminNodesIdUnlisted",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetUnlisted"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NodeTile"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "An error"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Unlist a domestic Bridge from the Bridge Address, or list it again; Devices on it drain off as they look it up again"
       }
     },
     "/v1/admin/overview": {

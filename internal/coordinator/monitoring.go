@@ -164,6 +164,7 @@ func (c *Coordinator) writeMetrics(ctx context.Context, m *metrics.Writer) error
 	eligible, members := 0, 0
 	for _, b := range addr.Bridges {
 		m.Bool("ways_bridge_address_member", "1 while the Bridge is in the Bridge Address's record.", b.InRecord, "node", b.Name)
+		m.Bool("ways_bridge_unlisted", "1 while an Admin keeps the Bridge out of the Bridge Address.", b.Unlisted, "node", b.Name)
 		if b.InRecord {
 			members++
 		}

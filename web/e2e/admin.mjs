@@ -135,7 +135,7 @@ try {
   console.log(`preset invite: ${(await (await created).json()).url}`);
   await page.locator("[data-testid=invite-open] td.presets", { hasText: "5 GB · Slow 2 Mbit/s · 2 Refills / 60 d" }).waitFor();
 
-  step("nodes: add with the enroll command, open a Bridge's Paths, edit, delete");
+  step("nodes: add with the enroll command, open a Bridge's Paths, unlist it, edit, delete");
   await screen("/admin/nodes", "Nodes");
   await page.fill("input[name=name]", "ab9");
   await page.fill("input[name=tags]", "DE");
@@ -148,7 +148,11 @@ try {
     await page.locator("[data-testid=paths]", { hasText: "Default" }).waitFor();
     // ab1 is a candidate once its first egress checks have passed.
     await page.locator("[data-testid=paths]", { hasText: "ab1" }).waitFor({ timeout: 90_000 });
+    // ir2 is in the Bridge Address too, so ir1 may be unlisted (ADR 0015).
+    await page.getByRole("button", { name: "Unlist", exact: true }).click();
+    await page.getByRole("button", { name: "List again", exact: true }).waitFor();
     await page.goto(`${PANEL_URL}/#/admin/nodes`);
+    await page.locator("[data-testid=node-row-ir1]", { hasText: "unlisted" }).waitFor();
   }
   await page.locator("[data-testid=node-row-ab9] a").click();
   await page.locator("[data-testid=node-name]", { hasText: "ab9" }).waitFor();

@@ -57,6 +57,9 @@ type NodeTile struct {
 	// sees; a mismatch is shown (ADR 0002).
 	Addr     string `json:"addr,omitempty"`
 	SeenAddr string `json:"seen_addr,omitempty"`
+	// Unlisted is set while an Admin keeps the Bridge out of the Bridge
+	// Address (ADR 0015).
+	Unlisted bool `json:"unlisted"`
 }
 
 // LinkTile is a Link on the status board and the Links screen.
@@ -167,6 +170,12 @@ type NodeEdit struct {
 	Tags  []string `json:"tags"`
 }
 
+// SetUnlisted unlists a domestic Bridge from the Bridge Address, or lists
+// it again (ADR 0015).
+type SetUnlisted struct {
+	Unlisted bool `json:"unlisted"`
+}
+
 // NodeDetail is a Node with its Links and, for a Bridge, how it carries
 // each Rule.
 type NodeDetail struct {
@@ -235,6 +244,8 @@ type AddressBridge struct {
 	Name     string `json:"name"`
 	Addr     string `json:"addr,omitempty"` // its public address, as last seen
 	InRecord bool   `json:"in_record"`
+	// Unlisted is set while an Admin keeps it out of the record (ADR 0015).
+	Unlisted bool `json:"unlisted"`
 	// Joined is when it last joined the record, while it is in it.
 	Joined   *time.Time `json:"joined,omitempty"`
 	Eligible bool       `json:"eligible"`

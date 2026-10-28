@@ -22,6 +22,7 @@ func TestPlanMembers(t *testing.T) {
 		name      string
 		members   []string
 		bridges   []string
+		unlisted  []string
 		elSince   map[string]time.Time
 		inelSince map[string]time.Time
 		want      []string
@@ -62,10 +63,34 @@ func TestPlanMembers(t *testing.T) {
 		{name: "a member not probed yet stays",
 			members: []string{"ir1", "ir2"}, bridges: three,
 			want: []string{"ir1", "ir2"}},
+		// ADR 0015: an Admin's unlisting.
+		{name: "an Unlisted member leaves at once, eligible as it is",
+			members: []string{"ir1", "ir2"}, bridges: three, unlisted: []string{"ir1"},
+			elSince: map[string]time.Time{"ir1": ago(time.Hour), "ir2": ago(time.Hour)},
+			want:    []string{"ir2"}},
+		{name: "an Unlisted Bridge never joins",
+			members: []string{"ir2"}, bridges: three, unlisted: []string{"ir1"},
+			elSince: map[string]time.Time{"ir1": ago(time.Hour), "ir2": ago(time.Hour)},
+			want:    []string{"ir2"}},
+		{name: "an Unlisted Bridge does not join an empty record either",
+			bridges: three, unlisted: []string{"ir1"}, elSince: map[string]time.Time{"ir1": now, "ir3": now},
+			want: []string{"ir3"}},
+		{name: "when an Unlisted last member leaves, an eligible Bridge takes over at once",
+			members: []string{"ir1"}, bridges: three, unlisted: []string{"ir1"},
+			elSince: map[string]time.Time{"ir1": ago(time.Hour), "ir2": ago(10 * time.Second)},
+			want:    []string{"ir2"}},
+		{name: "an Unlisted last member stays while no other Bridge can take over",
+			members: []string{"ir1"}, bridges: three, unlisted: []string{"ir1"},
+			elSince: map[string]time.Time{"ir1": ago(time.Hour)}, inelSince: map[string]time.Time{"ir2": ago(time.Hour)},
+			want: []string{"ir1"}},
+		{name: "listed again, a Bridge eligible all along rejoins at once",
+			members: []string{"ir2"}, bridges: three,
+			elSince: map[string]time.Time{"ir1": ago(time.Hour), "ir2": ago(time.Hour)},
+			want:    []string{"ir1", "ir2"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			members := slices.Clone(tc.members)
-			got := planMembers(members, tc.bridges, tc.elSince, tc.inelSince, now, time.Minute, 5*time.Minute)
+			got := planMembers(members, tc.bridges, tc.unlisted, tc.elSince, tc.inelSince, now, time.Minute, 5*time.Minute)
 			if !slices.Equal(got, tc.want) {
 				t.Errorf("got %v, want %v", got, tc.want)
 			}
@@ -267,5 +292,129 @@ func TestAbroadRoundPublishesAbroadBridges(t *testing.T) {
 	}
 	if m, _ := a.s.AddressMembers(ctx, store.BridgeRecord); len(m) != 0 {
 		t.Errorf("Bridge Address members = %+v", m)
+	}
+}
+
+// An Unlisted Bridge leaves the Bridge Address's record at the next round,
+// healthy as it is, and stays out; listed again, it rejoins at the next
+// round, since it was eligible all along (ADR 0015).
+func TestUnlistedBridgeLeavesTheRecord(t *testing.T) {
+	a := newAPI(t)
+	ctx := context.Background()
+	dns := arvan.NewFake("key", "wayfinder.ir")
+	srv := httptest.NewServer(dns)
+	t.Cleanup(srv.Close)
+	a.c.DNS = &arvan.Client{BaseURL: srv.URL, APIKey: "key", Zone: "wayfinder.ir", TTL: 120}
+	ids := map[string]string{}
+	for _, name := range []string{"ir1", "ir2"} {
+		n, err := a.s.CreateNode(ctx, name, []protocol.Role{protocol.RoleBridge}, []string{"IR"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		ids[name] = n.ID
+		a.s.PutHealth(ctx, n.ID, protocol.Health{}, "192.0.2."+name[2:])
+	}
+	// A round in which every Bridge is eligible.
+	round := func(want ...string) {
+		t.Helper()
+		bridges, health, err := a.c.domesticBridges(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := a.c.updateAddress(ctx, a.c.bridgeBook(), bridges, health, map[string][]string{}, *a.clock); err != nil {
+			t.Fatal(err)
+		}
+		if got := dns.A("bridge"); !slices.Equal(got, want) {
+			t.Errorf("record = %v, want %v", got, want)
+		}
+		a.tick(15 * time.Second)
+	}
+	round("192.0.2.1", "192.0.2.2")
+
+	if _, err := a.c.Unlist(ctx, ids["ir1"], true); err != nil {
+		t.Fatal(err)
+	}
+	round("192.0.2.2")
+	a.tick(10 * time.Minute)
+	round("192.0.2.2")
+	st, err := a.c.BridgeAddressStatus(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if b := st.Bridges[0]; b.Name != "ir1" || !b.Unlisted || b.InRecord || !b.Eligible || st.Bridges[1].Unlisted {
+		t.Errorf("status = %+v", st.Bridges)
+	}
+
+	if _, err := a.c.Unlist(ctx, ids["ir1"], false); err != nil {
+		t.Fatal(err)
+	}
+	round("192.0.2.1", "192.0.2.2")
+}
+
+// An Admin unlists a domestic Bridge and lists it again; unlisting is
+// refused for any other Node, and when it would leave the Bridge Address
+// with no Bridge (ADR 0015).
+func TestAdminUnlistBridge(t *testing.T) {
+	a := newAPI(t)
+	ctx := context.Background()
+	admin := a.admin()
+	node := func(name string, roles []protocol.Role, tags ...string) string {
+		n, err := a.s.CreateNode(ctx, name, roles, tags)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return n.ID
+	}
+	both := []protocol.Role{protocol.RoleBridge, protocol.RoleExit}
+	ir1, ir2 := node("ir1", both, "IR"), node("ir2", both, "IR")
+	aws := node("aws", both)
+	exitIR := node("exit-ir", []protocol.Role{protocol.RoleExit}, "IR")
+	unlist := func(want int, id string, unlisted bool) protocol.NodeTile {
+		t.Helper()
+		var tile protocol.NodeTile
+		admin.must(want, "POST", "/v1/admin/nodes/"+id+"/unlisted", protocol.SetUnlisted{Unlisted: unlisted}, &tile)
+		return tile
+	}
+
+	unlist(404, "nd_none", true)
+	unlist(409, aws, true)    // an Abroad Bridge
+	unlist(409, exitIR, true) // not a Bridge
+	// ir1 is the only Bridge in the record and ir2 is not eligible yet.
+	a.s.JoinAddress(ctx, store.BridgeRecord, ir1)
+	unlist(409, ir1, true)
+
+	// Once ir2 is eligible, ir1 may go.
+	a.c.address.elSince[ir2] = *a.clock
+	if tile := unlist(200, ir1, true); tile.Name != "ir1" || !tile.Unlisted {
+		t.Errorf("unlisted ir1 = %+v", tile)
+	}
+	unlist(200, ir1, true) // again: no change
+	// ir1, though still in the record until the next round, does not
+	// count for ir2.
+	unlist(409, ir2, true)
+	if n, _ := a.s.Node(ctx, ir2); n.Unlisted {
+		t.Error("a refused unlisting was stored")
+	}
+
+	var nodes []protocol.NodeTile
+	admin.must(200, "GET", "/v1/admin/nodes", nil, &nodes)
+	for _, n := range nodes {
+		if n.Unlisted != (n.Name == "ir1") {
+			t.Errorf("node %s unlisted %v", n.Name, n.Unlisted)
+		}
+	}
+	var o protocol.Overview
+	admin.must(200, "GET", "/v1/admin/overview", nil, &o)
+	if bs := o.BridgeAddress.Bridges; len(bs) != 2 || bs[0].Name != "ir1" || !bs[0].Unlisted || bs[1].Unlisted {
+		t.Errorf("Bridge Address status = %+v", bs)
+	}
+
+	// Listing again is never refused.
+	if tile := unlist(200, ir1, false); tile.Unlisted {
+		t.Errorf("listed ir1 = %+v", tile)
+	}
+	unlist(200, aws, false)
+	if n, _ := a.s.Node(ctx, ir1); n.Unlisted {
+		t.Error("ir1 is still unlisted in the store")
 	}
 }

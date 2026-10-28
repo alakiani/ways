@@ -10,7 +10,7 @@ Every Device carries **one** config whose `Endpoint` is the **Bridge Address**, 
 
 - **Held by the Coordinator** as a setting, default `bridge.wayfinder.ir`, written into each config at issuance like the Device port. Changing it affects only configs issued afterwards.
 - **One answer per lookup, in rotation**, through the record's `ip_filter_mode` (`count` single, `order` round robin) on ArvanCloud's DNS API. Lowest TTL ArvanCloud allows (target 60 s), unproxied.
-- **Every eligible domestic Bridge is in the record.** There are no unpublished spares. Abroad Bridges are never published (unchanged from ADR 0005). *(Amended by [ADR 0014](0014-abroad-devices.md): Abroad Bridges are published in their own Abroad Bridge Address, never in this one.)*
+- **Every eligible domestic Bridge is in the record.** There are no unpublished spares. Abroad Bridges are never published (unchanged from ADR 0005). *(Amended by [ADR 0014](0014-abroad-devices.md): Abroad Bridges are published in their own Abroad Bridge Address, never in this one.)* *(Amended by [ADR 0015](0015-unlisted-bridges.md): an Admin can unlist a domestic Bridge, which leaves the record at once and stays out until listed again.)*
 - **Eligibility is ADR 0005's, unchanged:** the probe Device's check passes, the Agent is reporting, and there is a working default-Rule Path.
 - **Removal:** a Bridge leaves the record after 60 s ineligible.
 - **Return:** a Bridge rejoins on its own after 5 minutes eligible again. Unlike a slot, rejoining moves no one: only new lookups can land on it.

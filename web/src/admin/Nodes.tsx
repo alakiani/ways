@@ -30,6 +30,19 @@ function RoleBoxes({ roles, setRoles }: { roles: Role[]; setRoles: (r: Role[]) =
   );
 }
 
+// A domestic Bridge, the only kind the Bridge Address holds and an Admin
+// can unlist (ADR 0015).
+const isDomesticBridge = (n: NodeTile) => n.roles.includes("bridge") && n.tags.includes("IR");
+
+function Unlisted({ node }: { node: NodeTile }) {
+  if (!node.unlisted) return null;
+  return (
+    <Badge size="sm" variant="light" color="orange" tt="none">
+      unlisted
+    </Badge>
+  );
+}
+
 function Roles({ roles }: { roles: string[] }) {
   return (
     <Group gap={4}>
@@ -81,9 +94,12 @@ export function NodesScreen() {
           {nodes.map((n) => (
             <Table.Tr key={n.id} data-testid={`node-row-${n.name}`}>
               <Table.Td>
-                <Anchor href={`#/admin/nodes/${n.id}`} fw={600} fz="sm">
-                  {n.name}
-                </Anchor>
+                <Group gap="xs" wrap="nowrap">
+                  <Anchor href={`#/admin/nodes/${n.id}`} fw={600} fz="sm">
+                    {n.name}
+                  </Anchor>
+                  <Unlisted node={n} />
+                </Group>
               </Table.Td>
               <Table.Td>
                 <Roles roles={n.roles} />
@@ -128,6 +144,7 @@ export function NodeScreen({ id }: { id: string }) {
   const [d, setD] = useState<NodeDetail | null>(null);
   const [roles, setRoles] = useState<Role[]>([]);
   const [tags, setTags] = useState("");
+  const [listError, setListError] = useState("");
   const load = (form: boolean) =>
     api.GET("/v1/admin/nodes/{id}", { params: { path: { id } } }).then(({ data }) => {
       setD(data ?? null);
@@ -150,6 +167,14 @@ export function NodeScreen({ id }: { id: string }) {
     await api.POST("/v1/admin/nodes/{id}", { params: { path: { id } }, body: { roles, tags: splitTags(tags) } });
     load(true);
   };
+  const setUnlisted = async (unlisted: boolean) => {
+    setListError("");
+    if (unlisted && !confirm(`Unlist ${n.name}? Lookups of the Bridge Address stop landing on it. Devices already on it keep working until they look it up again.`))
+      return;
+    const { error } = await api.POST("/v1/admin/nodes/{id}/unlisted", { params: { path: { id } }, body: { unlisted } });
+    if (error) return setListError((error as { error?: string }).error ?? "failed");
+    load(false);
+  };
   const remove = async () => {
     if (!typedConfirm("delete this Node; its certificate stops working at once", n.name)) return;
     await api.DELETE("/v1/admin/nodes/{id}", { params: { path: { id } } });
@@ -170,6 +195,7 @@ export function NodeScreen({ id }: { id: string }) {
             {n.name}
           </Title>
           <Roles roles={n.roles} />
+          <Unlisted node={n} />
         </Group>
         <Text c="dimmed" fz="sm">
           {n.enrolled ? `contact ${ago(n.last_contact)}` : "not enrolled"} · snapshot {n.applied_version}/{n.latest_version}
@@ -188,6 +214,25 @@ export function NodeScreen({ id }: { id: string }) {
           <Button type="submit">Save</Button>
         </Group>
       </Paper>
+
+      {isDomesticBridge(n) && (
+        <Paper p="lg" data-testid="listing">
+          <Group justify="space-between">
+            <div>
+              <Text fw={600}>Bridge Address</Text>
+              <Text c="dimmed" fz="sm">
+                {n.unlisted
+                  ? "Unlisted: no lookup lands on it. It still carries traffic across the mesh, and Devices already on it keep working."
+                  : "Listed: lookups land on it while it is eligible."}
+              </Text>
+              <Problem>{listError}</Problem>
+            </div>
+            <Button variant="light" color={n.unlisted ? undefined : "orange"} onClick={() => setUnlisted(!n.unlisted)}>
+              {n.unlisted ? "List again" : "Unlist"}
+            </Button>
+          </Group>
+        </Paper>
+      )}
 
       {d.paths.length > 0 && (
         <>

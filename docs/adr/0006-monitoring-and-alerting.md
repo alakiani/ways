@@ -68,6 +68,8 @@ A consequence: per-Device anomalies, such as one Device using unusually much, ar
 
 *(Amended by [ADR 0014](0014-abroad-devices.md): "Abroad Bridge removed from / returned to the Abroad Bridge Address" (warning / info), "Abroad Bridge Address down to one Bridge" (2 min, warning), and "No eligible Abroad Bridge" (2 min, critical).)*
 
+*(Amended by [ADR 0015](0015-unlisted-bridges.md): "Bridge removed from the Bridge Address" does not fire for a Bridge an Admin has unlisted.)*
+
 ## Delivering alerts
 
 Telegram is blocked domestically, so the Coordinator VM cannot reach it directly.

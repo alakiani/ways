@@ -41,7 +41,8 @@ func TestRulesCoverTheAlertTable(t *testing.T) {
 		`max_over_time(up{job="agents"}[3m]) == 0 and on (node) ways_node_report_age_seconds > 180`,
 		"severity: critical",
 		"for: 2m",
-		`ways_bridge_address_member == 0`,
+		// An Unlisted Bridge is out by the Admin's choice (ADR 0015).
+		`ways_bridge_address_member == 0 unless on (node) ways_bridge_unlisted == 1`,
 		`increase(ways_path_moves_total{kind="failure"}[1h]) > 6`,
 		`changes((max by (link) (ways_link_instance_up) == bool 0)[1h:]) >= 5`,
 		`ways_client_cert_expiry_timestamp_seconds - time() < 2592000`,
@@ -246,6 +247,7 @@ func TestConfigsPassPromtool(t *testing.T) {
 	run(promtool, "check", "rules", write("rules.yml", Rules(ADRTiming)))
 	run(promtool, "check", "rules", write("lab-rules.yml", Rules(LabTiming)))
 	run(promtool, "test", "rules", write("blackout-test.yml", blackoutTest))
+	run(promtool, "test", "rules", write("unlisted-test.yml", unlistedTest))
 	for _, f := range []string{"ca.crt", "prometheus.crt", "prometheus.key"} {
 		write(f, "")
 	}
@@ -289,6 +291,33 @@ tests:
               link: ab1/ir1
             exp_annotations:
               summary: "Every instance of Link ab1/ir1 went down at once at least 3 times in an hour"
+`
+
+// unlistedTest is a promtool rule test of BridgeRemovedFromBridgeAddress:
+// it fires for ir2, which fell out of the record, and not for ir1, which
+// an Admin unlisted (ADR 0015).
+const unlistedTest = `rule_files: [rules.yml]
+evaluation_interval: 15s
+tests:
+  - interval: 15s
+    input_series:
+      - series: 'ways_bridge_address_member{node="ir1"}'
+        values: '0x8'
+      - series: 'ways_bridge_unlisted{node="ir1"}'
+        values: '1x8'
+      - series: 'ways_bridge_address_member{node="ir2"}'
+        values: '0x8'
+      - series: 'ways_bridge_unlisted{node="ir2"}'
+        values: '0x8'
+    alert_rule_test:
+      - eval_time: 1m
+        alertname: BridgeRemovedFromBridgeAddress
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              node: ir2
+            exp_annotations:
+              summary: "Bridge ir2 is out of the Bridge Address"
 `
 
 func TestRuleExpressionsUseKnownMetrics(t *testing.T) {

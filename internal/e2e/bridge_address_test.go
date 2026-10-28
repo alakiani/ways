@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"net/netip"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -121,6 +122,80 @@ func TestBridgeAddress(t *testing.T) {
 			t.Errorf("status shows %+v", b)
 		}
 	}
+}
+
+// TestUnlistedBridge is ADR 0015's lab test: an Unlisted Bridge leaves the
+// Bridge Address's record within a few rounds, healthy as it is; a Device
+// already on it keeps reaching abroad through it; the last listed Bridge
+// cannot be unlisted; and listed again, the Bridge rejoins at once, having
+// been eligible all along.
+func TestUnlistedBridge(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	al := startAddressLab(t, ctx, "ir1", "ir3")
+	l, co, ids, members := al.l, al.co, al.m.ids, al.members
+	co.c.Address.RejoinAfter = 10 * time.Second // ADR 0011's 5 min, shortened
+	go co.c.RunBridgeAddress(ctx)
+	testutil.Eventually(t, 120*time.Second, "the record holds ir1 and ir3", func() bool {
+		return slices.Equal(members(), []string{"ir1", "ir3"})
+	})
+
+	// A User's Device; its lookup answered with ir1.
+	user, _ := co.store.CreateUser(ctx, "maryam")
+	key, _ := wgtypes.GeneratePrivateKey()
+	dev, err := co.store.CreateDevice(ctx, user.ID, "phone", key.PublicKey().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := co.c.Reconcile(ctx); err != nil {
+		t.Fatal(err)
+	}
+	bridgePub, _ := co.c.BridgePublicKey(ctx)
+	bridgeKey, _ := wgtypes.ParseKey(bridgePub)
+	p := newPhone(t, l.Node("phone1"), key, dev.Address, l.Node("ir1"), bridgeKey, coordinator.DefaultDevicePort)
+	abroad := func() (string, error) { return p.ask("93.184.215.14:7") }
+	ab1 := l.Node("ab1").Addr().String()
+	p.leavesFrom("abroad through ir1", abroad, ab1, 60*time.Second)
+
+	// Unlisting ir1 takes it out at the next round, not after 60 s.
+	if _, err := co.c.Unlist(ctx, ids["ir1"], true); err != nil {
+		t.Fatal(err)
+	}
+	unlisted := time.Now()
+	testutil.Eventually(t, 2*co.c.Address.ProbeEvery+10*time.Second, "ir1 leaves the record", func() bool {
+		return slices.Equal(members(), []string{"ir3"})
+	})
+	t.Logf("ir1 left the record %v after it was unlisted", time.Since(unlisted).Round(100*time.Millisecond))
+
+	// The Device on ir1 drains off only when it looks up again: until
+	// then, ir1 carries it abroad across the mesh.
+	p.leavesFrom("abroad through the Unlisted ir1", abroad, ab1, 10*time.Second)
+
+	// ir3 is the last listed Bridge.
+	if _, err := co.c.Unlist(ctx, ids["ir3"], true); err == nil || !strings.Contains(err.Error(), "no Bridge left") {
+		t.Errorf("unlisting the last listed Bridge: %v", err)
+	}
+
+	// ir1 stays out, eligible as it is, past the rejoin delay.
+	time.Sleep(co.c.Address.RejoinAfter + 2*co.c.Address.ProbeEvery)
+	if got := members(); !slices.Equal(got, []string{"ir3"}) {
+		t.Errorf("record holds %v while ir1 is unlisted, want ir3", got)
+	}
+	st, err := co.c.BridgeAddressStatus(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if b := st.Bridges[0]; b.Name != "ir1" || !b.Unlisted || b.InRecord || !b.Eligible {
+		t.Errorf("status shows %+v", b)
+	}
+
+	// Listed again, it rejoins at the next round.
+	if _, err := co.c.Unlist(ctx, ids["ir1"], false); err != nil {
+		t.Fatal(err)
+	}
+	testutil.Eventually(t, 2*co.c.Address.ProbeEvery+10*time.Second, "ir1 rejoins the record", func() bool {
+		return slices.Equal(members(), []string{"ir1", "ir3"})
+	})
 }
 
 // addressLab is a lab mesh for the Bridge Address test: domestic Bridges,

@@ -194,8 +194,14 @@ function AddressSection({ title, status: ba, testid, probed = false }: { title: 
                   <Table.Th>{b.name}</Table.Th>
                   <Table.Td>{b.addr ?? "no address yet"}</Table.Td>
                   <Table.Td>
-                    <Badge variant="light" color={b.in_record ? "green" : "gray"} tt="none">
-                      {b.in_record ? `in the record since ${ago(b.joined)}` : "out of the record"}
+                    <Badge variant="light" color={b.unlisted ? "orange" : b.in_record ? "green" : "gray"} tt="none">
+                      {b.unlisted
+                        ? b.in_record
+                          ? "unlisted, still in the record"
+                          : "unlisted by an Admin"
+                        : b.in_record
+                          ? `in the record since ${ago(b.joined)}`
+                          : "out of the record"}
                     </Badge>
                   </Table.Td>
                   <Table.Td>

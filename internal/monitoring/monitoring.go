@@ -91,7 +91,8 @@ func rules(t Timing) []rule {
 		// Rebalancing moves do not count (ADR 0008).
 		{"PathFlapping", `increase(ways_path_moves_total{kind="failure"}[1h]) > 6`,
 			0, "warning", "Paths of Rule {{ $labels.rule }} on {{ $labels.node }} flap: {{ $value | printf \"%.0f\" }} failure moves in an hour"},
-		{"BridgeRemovedFromBridgeAddress", `ways_bridge_address_member == 0`,
+		// An Unlisted Bridge is out by the Admin's choice (ADR 0015).
+		{"BridgeRemovedFromBridgeAddress", `ways_bridge_address_member == 0 unless on (node) ways_bridge_unlisted == 1`,
 			0, "warning", "Bridge {{ $labels.node }} is out of the Bridge Address"},
 		{"BridgeReturnedToBridgeAddress", fmt.Sprintf(`increase(ways_bridge_address_joins_total[%s]) > 0`, duration(t.EventWindow)),
 			0, "info", "A Bridge joined the Bridge Address"},

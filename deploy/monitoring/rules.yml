@@ -41,7 +41,7 @@ groups:
         annotations:
           summary: "Paths of Rule {{ $labels.rule }} on {{ $labels.node }} flap: {{ $value | printf \"%.0f\" }} failure moves in an hour"
       - alert: BridgeRemovedFromBridgeAddress
-        expr: "ways_bridge_address_member == 0"
+        expr: "ways_bridge_address_member == 0 unless on (node) ways_bridge_unlisted == 1"
         labels:
           severity: warning
         annotations:

@@ -80,6 +80,7 @@ func (c *Coordinator) routes() []route {
 		{"POST", "/v1/admin/nodes", authAdmin, "Add a Node and get its enroll command", protocol.NewNode{}, protocol.EnrollCommand{}, c.adminCreateNode},
 		{"GET", "/v1/admin/nodes/{id}", authAdmin, "A Node with its Links and Paths", nil, protocol.NodeDetail{}, c.adminNode},
 		{"POST", "/v1/admin/nodes/{id}", authAdmin, "Change a Node's Roles and Tags", protocol.NodeEdit{}, protocol.NodeStatus{}, c.adminEditNode},
+		{"POST", "/v1/admin/nodes/{id}/unlisted", authAdmin, "Unlist a domestic Bridge from the Bridge Address, or list it again; Devices on it drain off as they look it up again", protocol.SetUnlisted{}, protocol.NodeTile{}, c.adminUnlistNode},
 		{"DELETE", "/v1/admin/nodes/{id}", authAdmin, "Delete a Node; its certificate stops working", nil, nil, c.adminDeleteNode},
 		{"GET", "/v1/admin/links", authAdmin, "Every Link with its health", nil, []protocol.LinkTile{}, c.adminLinks},
 		{"GET", "/v1/admin/transports", authAdmin, "The candidate Transport list", nil, protocol.TransportList{}, c.adminTransports},

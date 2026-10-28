@@ -71,6 +71,9 @@ type addressState struct {
 	dnsFailures int
 	// joins and removals count changes to the record since start.
 	joins, removals int
+	// unlisting serializes Admins' unlisting, so two at once cannot both
+	// count on the other to stay in the record (ADR 0015).
+	unlisting sync.Mutex
 }
 
 // DefaultAbroadAddress is the hostname in every Abroad Device's config
@@ -84,14 +87,17 @@ type addressBook struct {
 	rec   store.Record
 	host  string
 	state *addressState
+	// unlisting is whether an Admin's unlisting keeps a Bridge out: only
+	// the Bridge Address's (ADR 0015).
+	unlisting bool
 }
 
 func (c *Coordinator) bridgeBook() addressBook {
-	return addressBook{"Bridge Address", store.BridgeRecord, c.BridgeAddress, &c.address}
+	return addressBook{"Bridge Address", store.BridgeRecord, c.BridgeAddress, &c.address, true}
 }
 
 func (c *Coordinator) abroadBook() addressBook {
-	return addressBook{"Abroad Bridge Address", store.AbroadRecord, c.AbroadAddress, &c.abroad}
+	return addressBook{"Abroad Bridge Address", store.AbroadRecord, c.AbroadAddress, &c.abroad, false}
 }
 
 func newAddressState() addressState {
@@ -218,10 +224,14 @@ func (c *Coordinator) updateAddress(ctx context.Context, book addressBook, bridg
 	health map[string]*protocol.HealthStatus, reasons map[string][]string, now time.Time) error {
 	ids := make([]string, len(bridges))
 	names := map[string]string{}
+	var unlisted []string
 	s := book.state
 	s.mu.Lock()
 	for i, b := range bridges {
 		ids[i], names[b.ID] = b.ID, b.Name
+		if book.unlisting && b.Unlisted {
+			unlisted = append(unlisted, b.ID)
+		}
 		_, was := s.inelSince[b.ID]
 		switch r := reasons[b.ID]; {
 		case len(r) == 0:
@@ -268,12 +278,16 @@ func (c *Coordinator) updateAddress(ctx context.Context, book addressBook, bridg
 	for _, m := range stored {
 		members = append(members, m.NodeID)
 	}
-	next := planMembers(members, ids, elSince, inelSince, now, c.Address.RemoveAfter, c.Address.RejoinAfter)
+	next := planMembers(members, ids, unlisted, elSince, inelSince, now, c.Address.RemoveAfter, c.Address.RejoinAfter)
 	for _, id := range members {
 		if slices.Contains(next, id) {
 			continue
 		}
-		c.log.Warn("Bridge removed from the "+book.name, "node", cmp.Or(names[id], id))
+		if slices.Contains(unlisted, id) {
+			c.log.Info("Unlisted Bridge left the "+book.name, "node", names[id])
+		} else {
+			c.log.Warn("Bridge removed from the "+book.name, "node", cmp.Or(names[id], id))
+		}
 		if err := c.store.LeaveAddress(ctx, book.rec, id); err != nil {
 			return err
 		}
@@ -367,10 +381,11 @@ func abroadIneligibility(h *protocol.HealthStatus, abroadRule uint64, now time.T
 // 0011). A member stays until it has been ineligible for removeAfter. A
 // Bridge outside joins once it has been eligible for rejoinAfter, or at
 // once while no member is left, so a new fleet is not without one for
-// minutes. The record is never emptied: if every member would leave, they
-// all stay. A Node no longer a domestic Bridge leaves at once. bridges are
-// the domestic Bridges in order, and so is the result.
-func planMembers(members, bridges []string, elSince, inelSince map[string]time.Time,
+// minutes. An Unlisted Bridge leaves at once and never joins (ADR 0015).
+// The record is never emptied: if every member would leave, they all
+// stay. A Node no longer a domestic Bridge leaves at once. bridges are the
+// domestic Bridges in order, and so is the result.
+func planMembers(members, bridges, unlisted []string, elSince, inelSince map[string]time.Time,
 	now time.Time, removeAfter, rejoinAfter time.Duration) []string {
 	var kept, out []string
 	for _, b := range bridges {
@@ -379,14 +394,14 @@ func planMembers(members, bridges []string, elSince, inelSince map[string]time.T
 		}
 	}
 	for _, b := range kept {
-		if since, inel := inelSince[b]; !inel || now.Sub(since) < removeAfter {
+		if since, inel := inelSince[b]; !slices.Contains(unlisted, b) && (!inel || now.Sub(since) < removeAfter) {
 			out = append(out, b)
 		}
 	}
 	empty := len(out) == 0
 	for _, b := range bridges {
 		since, el := elSince[b]
-		if el && !slices.Contains(kept, b) && (empty || now.Sub(since) >= rejoinAfter) {
+		if el && !slices.Contains(kept, b) && !slices.Contains(unlisted, b) && (empty || now.Sub(since) >= rejoinAfter) {
 			out = append(out, b)
 		}
 	}
@@ -429,7 +444,7 @@ func (c *Coordinator) addressStatus(ctx context.Context, book addressBook, bridg
 	defer s.mu.Unlock()
 	st.Joins, st.Removals, st.Published = s.joins, s.removals, s.published != ""
 	for _, b := range bridges {
-		ab := protocol.AddressBridge{Name: b.Name, Addr: seenAddr(health[b.ID]), Reasons: s.reasons[b.ID]}
+		ab := protocol.AddressBridge{Name: b.Name, Addr: seenAddr(health[b.ID]), Reasons: s.reasons[b.ID], Unlisted: book.unlisting && b.Unlisted}
 		if i := slices.IndexFunc(stored, func(m store.AddressMember) bool { return m.NodeID == b.ID }); i >= 0 {
 			joined := time.Unix(stored[i].Joined, 0).UTC()
 			ab.InRecord, ab.Joined = true, &joined
@@ -446,6 +461,62 @@ func (c *Coordinator) addressStatus(ctx context.Context, book addressBook, bridg
 		st.Bridges = append(st.Bridges, ab)
 	}
 	return st, nil
+}
+
+var (
+	errNotDomesticBridge = errors.New("only a domestic Bridge can be unlisted: the Node is not a Bridge tagged IR")
+	errLastBridge        = errors.New("the Bridge Address would have no Bridge left: another domestic Bridge must be in it or eligible first")
+)
+
+// Unlist takes a domestic Bridge out of the Bridge Address, or with
+// unlisted false lists it again; the next round acts on it (ADR 0015).
+// Unlisting is refused unless another listed domestic Bridge is in the
+// record or eligible now.
+func (c *Coordinator) Unlist(ctx context.Context, id string, unlisted bool) (store.Node, error) {
+	s := &c.address
+	s.unlisting.Lock()
+	defer s.unlisting.Unlock()
+	n, err := c.store.Node(ctx, id)
+	if err != nil {
+		return store.Node{}, err
+	}
+	if unlisted {
+		if !isBridge(n) || !isIR(n) {
+			return n, errNotDomesticBridge
+		}
+		nodes, err := c.store.Nodes(ctx)
+		if err != nil {
+			return n, err
+		}
+		members, err := c.store.AddressMembers(ctx, store.BridgeRecord)
+		if err != nil {
+			return n, err
+		}
+		s.mu.Lock()
+		elSince := maps.Clone(s.elSince)
+		s.mu.Unlock()
+		left := slices.ContainsFunc(nodes, func(b store.Node) bool {
+			if b.ID == id || b.Unlisted || !isBridge(b) || !isIR(b) {
+				return false
+			}
+			_, eligible := elSince[b.ID]
+			return eligible || slices.ContainsFunc(members, func(m store.AddressMember) bool { return m.NodeID == b.ID })
+		})
+		if !left {
+			return n, errLastBridge
+		}
+	}
+	if err := c.store.SetNodeUnlisted(ctx, id, unlisted); err != nil {
+		return n, err
+	}
+	switch {
+	case unlisted && !n.Unlisted:
+		c.log.Info("Bridge unlisted from the Bridge Address", "node", n.Name)
+	case !unlisted && n.Unlisted:
+		c.log.Info("Bridge listed in the Bridge Address again", "node", n.Name)
+	}
+	n.Unlisted = unlisted
+	return n, nil
 }
 
 // domesticBridges are the Bridges tagged IR, by name, with every Node's

@@ -132,6 +132,7 @@ type Invite struct {
 	QuotaSetting
 	Refills   int
 	RefillTTL time.Duration
+	Abroad    bool // a new-User Invite may preset the abroad permission (ADR 0014)
 }
 
 // CreateInvite returns a single-use Invite's secret.
@@ -150,9 +151,9 @@ func (s *Store) CreateInvite(ctx context.Context, inv Invite, ttl time.Duration)
 		rate = inv.SlowRate
 	}
 	_, err := s.db.ExecContext(ctx, `INSERT INTO invites (hash, id, kind, user_id, is_admin, device_cap, created_at, expires_at,
-			quota, slow_rate, refills, refill_ttl)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, hash(token), "inv_"+randomHex(8), inv.Kind, uid, inv.Admin, cap, s.unix(), expires.Unix(),
-		inv.Quota, rate, inv.Refills, int64(inv.RefillTTL/time.Second))
+			quota, slow_rate, refills, refill_ttl, abroad)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, hash(token), "inv_"+randomHex(8), inv.Kind, uid, inv.Admin, cap, s.unix(), expires.Unix(),
+		inv.Quota, rate, inv.Refills, int64(inv.RefillTTL/time.Second), inv.Abroad)
 	return token, expires, err
 }
 
@@ -170,9 +171,9 @@ func (s *Store) lookupInvite(ctx context.Context, q queryer, token string) (Invi
 	var uid sql.NullString
 	var cap sql.NullInt64
 	var expires, refillTTL int64
-	err := q.QueryRowContext(ctx, `SELECT kind, user_id, is_admin, device_cap, expires_at, quota, coalesce(slow_rate, 0), refills, refill_ttl
+	err := q.QueryRowContext(ctx, `SELECT kind, user_id, is_admin, device_cap, expires_at, quota, coalesce(slow_rate, 0), refills, refill_ttl, abroad
 		FROM invites WHERE hash = ? AND used_at IS NULL AND withdrawn_at IS NULL`, hash(token)).
-		Scan(&inv.Kind, &uid, &inv.Admin, &cap, &expires, &inv.Quota, &inv.SlowRate, &inv.Refills, &refillTTL)
+		Scan(&inv.Kind, &uid, &inv.Admin, &cap, &expires, &inv.Quota, &inv.SlowRate, &inv.Refills, &refillTTL, &inv.Abroad)
 	if errors.Is(err, sql.ErrNoRows) || err == nil && s.unix() > expires {
 		return Invite{}, ErrInvalidToken
 	}
@@ -204,8 +205,8 @@ func (s *Store) AcceptNewInvite(ctx context.Context, token, handle, passwordHash
 		if inv.SlowRate > 0 {
 			rate = inv.SlowRate
 		}
-		_, err = tx.Exec(`INSERT INTO users (id, handle, password_hash, is_admin, device_cap, created_at, quota, slow_rate)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, id, handle, passwordHash, inv.Admin, cap, s.unix(), inv.Quota, rate)
+		_, err = tx.Exec(`INSERT INTO users (id, handle, password_hash, is_admin, device_cap, created_at, quota, slow_rate, abroad)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, id, handle, passwordHash, inv.Admin, cap, s.unix(), inv.Quota, rate, inv.Abroad)
 		if err != nil && strings.Contains(err.Error(), "UNIQUE constraint failed") {
 			return fmt.Errorf("handle %q: %w", handle, ErrExists)
 		}

@@ -120,20 +120,22 @@ try {
   await page.locator("[data-testid=invite-open]").first().getByRole("button", { name: "Withdraw" }).click();
   await page.waitForFunction((n) => document.querySelectorAll("[data-testid=invite-withdrawn]").length > n, before);
 
-  step("invites: create one with a Quota, slow when out, and Refills; its row shows them");
+  step("invites: create one with a Quota, slow when out, Refills and abroad; its row shows them");
   if ((await page.inputValue("input[name=quota]")) !== "" || (await page.inputValue("select[name=running_out]")) !== "block" ||
-    (await page.inputValue("input[name=refills]")) !== "0" || (await page.inputValue("input[name=refill_days]")) !== "30")
-    throw new Error("the Invite form's Quota defaults are not Unlimited, Block, 0 Refills and 30 days");
+    (await page.inputValue("input[name=refills]")) !== "0" || (await page.inputValue("input[name=refill_days]")) !== "30" ||
+    (await page.isChecked("input[name=abroad]")))
+    throw new Error("the Invite form's defaults are not Unlimited, Block, 0 Refills, 30 days and not abroad");
   await page.fill("input[name=quota]", "5");
   await page.selectOption("select[name=running_out]", "slow");
   await page.fill("input[name=mbits]", "2");
   await page.fill("input[name=refills]", "2");
   await page.fill("input[name=refill_days]", "60");
+  await page.check("input[name=abroad]");
   const created = page.waitForResponse((r) => r.url().endsWith("/v1/admin/invites") && r.request().method() === "POST");
   await page.getByRole("button", { name: "Create Invite" }).click();
   // The Go test looks the Invite up by its token.
   console.log(`preset invite: ${(await (await created).json()).url}`);
-  await page.locator("[data-testid=invite-open] td.presets", { hasText: "5 GB · Slow 2 Mbit/s · 2 Refills / 60 d" }).waitFor();
+  await page.locator("[data-testid=invite-open] td.presets", { hasText: "5 GB · Slow 2 Mbit/s · 2 Refills / 60 d · Abroad" }).waitFor();
 
   step("nodes: add with the enroll command, open a Bridge's Paths, unlist it, edit, delete");
   await screen("/admin/nodes", "Nodes");

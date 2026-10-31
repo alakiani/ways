@@ -144,6 +144,7 @@ type InviteRecord struct {
 	Rate       uint64     `json:"rate,omitempty"`
 	Refills    int        `json:"refills,omitempty"`
 	RefillDays int        `json:"refill_days,omitempty"` // only with Refills
+	Abroad     bool       `json:"abroad,omitempty"`      // the abroad permission (ADR 0014)
 }
 
 // NewNode adds a Node from the panel. SSHHost is only used to write the

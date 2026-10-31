@@ -201,6 +201,9 @@
       },
       "CreateInvite": {
         "properties": {
+          "abroad": {
+            "type": "boolean"
+          },
           "admin": {
             "type": "boolean"
           },
@@ -594,6 +597,9 @@
       },
       "InviteRecord": {
         "properties": {
+          "abroad": {
+            "type": "boolean"
+          },
           "admin": {
             "type": "boolean"
           },

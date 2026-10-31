@@ -32,16 +32,26 @@ export function byQuotaShare(a: Usage & { handle: string }, b: Usage & { handle:
   return a.handle.localeCompare(b.handle);
 }
 
-type Presets = { kind: string; quota?: number | null; running_out?: string; rate?: number; refills?: number; refill_days?: number };
+type Presets = {
+  kind: string;
+  quota?: number | null;
+  running_out?: string;
+  rate?: number;
+  refills?: number;
+  refill_days?: number;
+  abroad?: boolean;
+};
 
 /** What a new-User Invite presets: "5 GB · Slow 2 Mbit/s · 2 Refills / 60 d",
- * or "Unlimited". A recovery Invite presets nothing. */
+ * or "Unlimited", then "Abroad" with the abroad permission (ADR 0014). A
+ * recovery Invite presets nothing. */
 export function presetsText(i: Presets): string {
   if (i.kind !== "new") return "";
   const parts = [];
   if (i.quota == null) parts.push("Unlimited");
   else parts.push(`${gbField(i.quota)} GB`, i.running_out === "slow" ? `Slow ${mbits(i.rate ?? 0)} Mbit/s` : "Block");
   if (i.refills) parts.push(`${i.refills} ${i.refills === 1 ? "Refill" : "Refills"} / ${i.refill_days} d`);
+  if (i.abroad) parts.push("Abroad");
   return parts.join(" · ");
 }
 

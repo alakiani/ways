@@ -188,8 +188,8 @@ func TestAdminPanel(t *testing.T) {
 		t.Fatal("the browser printed no preset Invite")
 	}
 	inv, err := co.store.LookupInvite(ctx, match[1])
-	if err != nil || inv.Quota == nil || *inv.Quota != 5e9 || inv.SlowRate != 250_000 || inv.Refills != 2 || inv.RefillTTL != 60*24*time.Hour {
-		t.Errorf("preset Invite = %+v, %v; want 5 GB, slow to 2 Mbit/s, 2 Refills for 60 days", inv, err)
+	if err != nil || inv.Quota == nil || *inv.Quota != 5e9 || inv.SlowRate != 250_000 || inv.Refills != 2 || inv.RefillTTL != 60*24*time.Hour || !inv.Abroad {
+		t.Errorf("preset Invite = %+v, %v; want 5 GB, slow to 2 Mbit/s, 2 Refills for 60 days, abroad", inv, err)
 	}
 	invites, _ := co.store.Invites(ctx)
 	withdrawn, recovery := 0, 0

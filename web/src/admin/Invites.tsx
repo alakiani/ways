@@ -7,11 +7,13 @@ import { parseGB, presetsText, rateOf } from "./quota";
 import { ListTable, Screen, Shown, Status } from "./ui";
 
 // Invites: create with a cap, list, withdraw (issue #14). A new User's
-// Invite may preset their Quota, running-out setting and Refills (ADR 0010).
+// Invite may preset their Quota, running-out setting and Refills (ADR 0010),
+// and the abroad permission (ADR 0014).
 export function InvitesScreen() {
   const [list, setList] = useState<InviteRecord[]>([]);
   const [cap, setCap] = useState(3);
   const [admin, setAdmin] = useState(false);
+  const [abroad, setAbroad] = useState(false);
   const [quota, setQuota] = useState(""); // GB; empty is unlimited
   const [runningOut, setRunningOut] = useState("block");
   const [mbit, setMbit] = useState(1);
@@ -33,6 +35,7 @@ export function InvitesScreen() {
       rate: runningOut === "slow" ? rateOf(mbit) : undefined,
       refills,
       refill_days: refillDays,
+      abroad,
     };
     const { data } = await api.POST("/v1/admin/invites", { body });
     if (data) setUrl(data.url);
@@ -85,6 +88,14 @@ export function InvitesScreen() {
               onChange={(e) => setRefillDays(Number(e.target.value))}
             />
             <Checkbox name="admin" label="Admin" mb={8} checked={admin} onChange={(e) => setAdmin(e.target.checked)} />
+            <Checkbox
+              name="abroad"
+              label="Abroad"
+              title="May hold Abroad Devices, whose traffic all leaves through a domestic Exit"
+              mb={8}
+              checked={abroad}
+              onChange={(e) => setAbroad(e.target.checked)}
+            />
           </Group>
           <Group>
             <Button type="submit" leftSection={<IconPlus size={16} />}>

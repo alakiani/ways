@@ -204,6 +204,7 @@ func (c *Coordinator) adminInvites(w http.ResponseWriter, r *http.Request) {
 			if rec.Refills > 0 {
 				inv.Refills, inv.RefillDays = rec.Refills, int(rec.RefillTTL/(24*time.Hour))
 			}
+			inv.Abroad = rec.Abroad
 		}
 		out = append(out, inv)
 	}

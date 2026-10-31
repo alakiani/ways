@@ -654,3 +654,26 @@ func TestAbroadDevices(t *testing.T) {
 	}
 	cl.must(403, "POST", "/v1/me/devices", protocol.NewDevice{Name: "tablet abroad", PublicKey: pubKey(t), Abroad: true}, nil)
 }
+
+// An Admin may give the abroad permission on the Invite, so the new User
+// can make an Abroad Device as soon as they register.
+func TestAnInviteMayPresetTheAbroadPermission(t *testing.T) {
+	a := newAPI(t)
+	admin := a.admin()
+	var inv protocol.IssuedInvite
+	admin.must(200, "POST", "/v1/admin/invites", protocol.CreateInvite{Abroad: true}, &inv)
+	if r := admin.openInvite(); !r.Abroad {
+		t.Errorf("the listed Invite = %+v, want abroad", r)
+	}
+	sara := a.client()
+	var me protocol.Me
+	sara.must(200, "POST", "/v1/invites/accept", protocol.AcceptInvite{Token: inv.Token, Handle: "sara", Password: password}, &me)
+	if !me.Abroad {
+		t.Errorf("me = %+v, want the abroad permission", me)
+	}
+	var issued protocol.IssuedDevice
+	sara.must(200, "POST", "/v1/me/devices", protocol.NewDevice{Name: "phone abroad", PublicKey: pubKey(t), Abroad: true}, &issued)
+	if !issued.Device.Abroad || issued.Device.State != "active" {
+		t.Errorf("device = %+v", issued.Device)
+	}
+}

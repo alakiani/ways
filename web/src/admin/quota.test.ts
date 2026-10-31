@@ -80,6 +80,13 @@ describe("the Invites table's Presets column", () => {
     expect(presetsText(invite({ quota: 5e9, running_out: "block" }))).toBe("5 GB · Block");
   });
 
+  it("shows the abroad permission last", () => {
+    expect(presetsText(invite({ running_out: "block", abroad: true }))).toBe("Unlimited · Abroad");
+    expect(presetsText(invite({ quota: 5e9, running_out: "block", refills: 1, refill_days: 30, abroad: true }))).toBe(
+      "5 GB · Block · 1 Refill / 30 d · Abroad",
+    );
+  });
+
   it("shows Unlimited without a Quota, and nothing for a recovery Invite", () => {
     expect(presetsText(invite({ running_out: "block" }))).toBe("Unlimited");
     expect(presetsText(invite({ running_out: "block", refills: 3, refill_days: 10 }))).toBe("Unlimited · 3 Refills / 10 d");

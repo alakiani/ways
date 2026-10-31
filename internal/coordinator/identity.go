@@ -578,7 +578,7 @@ func (c *Coordinator) adminCreateInvite(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	c.issueInvite(w, r, store.Invite{Kind: "new", Admin: req.Admin, DeviceCap: req.DeviceCap,
-		QuotaSetting: q, Refills: req.Refills, RefillTTL: ttl})
+		QuotaSetting: q, Refills: req.Refills, RefillTTL: ttl, Abroad: req.Abroad})
 }
 
 func (c *Coordinator) userInfo(r *http.Request, a store.Account) (protocol.UserInfo, error) {

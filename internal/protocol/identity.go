@@ -133,7 +133,8 @@ type Endpoint struct {
 }
 
 // CreateInvite asks for a new-User Invite. It may preset the User's
-// Quota, what happens when they run out, and Refills to hold (ADR 0010).
+// Quota, what happens when they run out, and Refills to hold (ADR 0010),
+// and the abroad permission (ADR 0014).
 type CreateInvite struct {
 	Admin     bool    `json:"admin,omitempty"`
 	DeviceCap int     `json:"device_cap,omitempty"` // 0: the default of 3
@@ -144,7 +145,8 @@ type CreateInvite struct {
 	Refills    int        `json:"refills,omitempty"` // how many to hold, 0 to 100
 	// RefillDays is how long each Refill lasts, counted from registration;
 	// 0 is the default of 30.
-	RefillDays int `json:"refill_days,omitempty"`
+	RefillDays int  `json:"refill_days,omitempty"`
+	Abroad     bool `json:"abroad,omitempty"` // may hold Abroad Devices from the start
 }
 
 // IssuedInvite is an Invite to hand over out of band.

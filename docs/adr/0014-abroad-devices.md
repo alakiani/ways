@@ -9,7 +9,7 @@ A User abroad who needs Iranian services, such as banks, payment gateways and st
 ## Abroad Devices
 
 - **A kind fixed at issuance.** Abroad Devices take their address from their own sub-pool, `10.77.128.0/17`; ordinary Devices keep `10.77.0.0/17`. A Bridge matches the whole kind with one prefix. Changing a Device's kind is a Replace. A User who travels holds one of each and picks one in the WireGuard app: that choice is their intent.
-- **Opt-in per User.** Only a User an Admin has given the abroad permission may issue one. Abroad Devices put foreign clients onto the domestic Exits' IPs, a different risk from the rest of the service.
+- **Opt-in per User.** Only a User an Admin has given the abroad permission may issue one. Abroad Devices put foreign clients onto the domestic Exits' IPs, a different risk from the rest of the service. The Admin may give it on a new-User Invite, as ADR 0010's Quota presets are, so the User can issue an Abroad Device right after registering (amended 2026-10-31).
 - **Taking the permission away cuts the User's Abroad Devices off but keeps them**, as Suspend does: they leave the Bridge snapshots with their keys kept, and granting the permission again restores them with the same configs.
 - **Quota and Usage are unchanged.** An Abroad Device counts toward its User's Quota like any other.
 - **The panel issues them through a separate "Add Abroad Device" action**, shown only to permitted Users. Its config differs from an ordinary one only in `Endpoint` and address. A fixed notice says that everything browsed leaves from Iran and is filtered, so the Device is for while Iranian services are needed.

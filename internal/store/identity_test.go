@@ -40,6 +40,30 @@ func TestNewInviteIsSingleUseAndExpires(t *testing.T) {
 	}
 }
 
+// An Invite may give the new User the abroad permission (ADR 0014), so an
+// Admin need not wait for them to register.
+func TestAnInvitePresetsTheAbroadPermission(t *testing.T) {
+	s := open(t, newClock())
+	tok, _, err := s.CreateInvite(ctx, store.Invite{Kind: "new", Abroad: true}, time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if inv, err := s.LookupInvite(ctx, tok); err != nil || !inv.Abroad {
+		t.Errorf("looked up = %+v, %v", inv, err)
+	}
+	if recs, _ := s.Invites(ctx); len(recs) != 1 || !recs[0].Abroad {
+		t.Errorf("listed = %+v", recs)
+	}
+	a, err := s.AcceptNewInvite(ctx, tok, "sara", "h")
+	if err != nil || !a.Abroad {
+		t.Errorf("sara = %+v, %v; want the abroad permission", a, err)
+	}
+	tok, _, _ = s.CreateInvite(ctx, store.Invite{Kind: "new"}, time.Hour)
+	if a, err := s.AcceptNewInvite(ctx, tok, "reza", "h"); err != nil || a.Abroad {
+		t.Errorf("reza = %+v, %v; want no abroad permission", a, err)
+	}
+}
+
 func TestRecoveryInviteReplacesCredentialsAndEndsSessions(t *testing.T) {
 	s := open(t, newClock())
 	tok, _, _ := s.CreateInvite(ctx, store.Invite{Kind: "new"}, time.Hour)

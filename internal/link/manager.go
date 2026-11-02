@@ -45,6 +45,7 @@ const (
 	choicesFile = "listen.json"
 
 	egressInterval = 5 * time.Second
+	egressMisses   = 3 // in a row before the egress check fails (ADR 0008)
 	selectInterval = 200 * time.Millisecond
 )
 
@@ -497,19 +498,44 @@ func (m *Manager) Report(_ context.Context, h *protocol.Health) {
 	}
 }
 
+// egressVerdict is the egress check as the Node reports it: it passes at
+// the first pass, and fails only after egressMisses misses in a row. A lone
+// miss is a slow resolver or object rather than a lost uplink, and failing
+// on it moves every bucket off the Exit and back, resetting the
+// connections through it twice.
+type egressVerdict struct {
+	ok     bool
+	misses int // in a row
+}
+
+func (v *egressVerdict) observe(passed bool) {
+	if passed {
+		v.ok, v.misses = true, 0
+		return
+	}
+	v.misses++
+	if v.misses >= egressMisses {
+		v.ok = false
+	}
+}
+
 func (m *Manager) egressLoop(ctx context.Context) {
 	t := time.NewTicker(egressInterval)
 	defer t.Stop()
+	var v egressVerdict
 	for {
 		m.mu.Lock()
 		check := m.egress
 		m.mu.Unlock()
-		ok := false
-		if check != nil {
-			ok = m.cfg.CheckEgress(ctx, *check)
+		if check == nil {
+			v = egressVerdict{} // not an Exit: nothing to pass
+		} else {
+			v.observe(m.cfg.CheckEgress(ctx, *check))
 		}
-		if m.egressOK.Swap(ok) != ok {
-			m.log.Info("egress check changed", "ok", ok)
+		if m.egressOK.Swap(v.ok) != v.ok {
+			m.log.Info("egress check changed", "ok", v.ok)
+		} else if v.ok && v.misses > 0 {
+			m.log.Info("egress check missed", "in_a_row", v.misses, "fails_at", egressMisses)
 		}
 		select {
 		case <-ctx.Done():

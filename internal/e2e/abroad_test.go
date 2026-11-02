@@ -125,12 +125,13 @@ func TestAbroadDevices(t *testing.T) {
 
 	// With no domestic Exit left, the Abroad Device's traffic is dropped,
 	// never sent out of the Abroad Bridge (ADR 0014). ir1 loses its own
-	// egress check, so it is no longer an eligible Exit.
+	// egress check, so it is no longer an eligible Exit. Three checks must
+	// time out in a row first, which takes up to about 20 s.
 	if out, err := l.Node("ir1").Command("nft", "add table ip cut; add chain ip cut out { type filter hook output priority 0; }; "+
 		"add rule ip cut out ip daddr 2.188.0.10 drop").CombinedOutput(); err != nil {
 		t.Fatalf("cutting ir1's egress check: %v: %s", err, out)
 	}
-	testutil.Eventually(t, 30*time.Second, "the Abroad Device is cut off", func() bool {
+	testutil.Eventually(t, 45*time.Second, "the Abroad Device is cut off", func() bool {
 		_, err := p1.ask(webAb)
 		return err != nil
 	})

@@ -75,7 +75,7 @@ A consequence: per-Device anomalies, such as one Device using unusually much, ar
 Telegram is blocked domestically, so the Coordinator VM cannot reach it directly.
 
 1. Alertmanager sends every alert as a webhook to the Coordinator on the same VM.
-2. The Coordinator hands it to any healthy Exit, trying the next one if that fails.
+2. The Coordinator hands it to any healthy Exit abroad, trying the next one if that fails. An Exit tagged `IR` is never asked: it sits behind the same filter, and since domestic Nodes became Exits (ADR 0004) every alert first failed on one and was delayed (amended 2026-11-02).
 3. That Exit's Agent forwards it to the Telegram channel, on the same allowlisted mTLS port.
 
 No Exit is special, so throwing one away costs nothing. An alert that no Exit could deliver shows as a banner on the admin panel, so the operator still sees it from inside Iran during an international outage.

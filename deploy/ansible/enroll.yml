@@ -181,6 +181,7 @@
         daemon_reload: "{{ units.changed }}"
         state: "{{ 'restarted' if (binaries.changed or ca.changed or units.changed or token.changed) else 'started' }}"
 
+    # A call that fails outright has no json; it is retried like the rest.
     - name: Wait for its first health report from this release
       ansible.builtin.uri:
         url: "{{ ways_api_url }}/v1/nodes/{{ node.json.node.id }}"
@@ -190,7 +191,8 @@
       become: false
       register: status
       until: >-
-        status.json.enrolled
+        status.json is defined
+        and status.json.enrolled
         and status.json.last_health is defined
         and status.json.last_health.agent_version == ways_release
       retries: 60

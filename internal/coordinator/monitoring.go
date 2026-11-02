@@ -359,8 +359,10 @@ func (c *Coordinator) relayPending(ctx context.Context) {
 	}
 }
 
-// relay hands text to the first healthy Exit that takes it: an Exit
-// whose Agent reported recently, most recent first. No Exit is special.
+// relay hands text to the first healthy Exit abroad that takes it: an Exit
+// whose Agent reported recently, most recent first. Telegram is blocked
+// domestically, so an Exit tagged IR is never asked. No Exit abroad is
+// special.
 func (c *Coordinator) relay(ctx context.Context, text string) error {
 	if c.Monitor.Port == 0 || c.Monitor.Telegram.BotToken == "" || c.Monitor.Telegram.ChatID == "" {
 		return errors.New("Telegram relay is not configured")
@@ -376,7 +378,7 @@ func (c *Coordinator) relay(ctx context.Context, text string) error {
 	var exits []exit
 	now := c.store.Now()
 	for _, n := range nodes {
-		if !slices.Contains(n.Roles, protocol.RoleExit) {
+		if !slices.Contains(n.Roles, protocol.RoleExit) || isIR(n) {
 			continue
 		}
 		h, err := c.store.Health(ctx, n.ID)
@@ -388,7 +390,7 @@ func (c *Coordinator) relay(ctx context.Context, text string) error {
 		}
 	}
 	if len(exits) == 0 {
-		return errors.New("no healthy Exit")
+		return errors.New("no healthy Exit abroad")
 	}
 	slices.SortStableFunc(exits, func(a, b exit) int { return b.h.ReceivedAt.Compare(a.h.ReceivedAt) })
 	identity, err := c.relayIdentity()

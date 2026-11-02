@@ -3,11 +3,14 @@ package coordinator
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -114,7 +117,7 @@ func TestUndeliverableAlertsWaitOnTheBanner(t *testing.T) {
 	if got, _ := m.c.UndeliveredAlerts(bg); len(got) != 0 {
 		t.Errorf("banner before any attempt: %+v", got)
 	}
-	// ir1, the only Exit, has not reported for an hour.
+	// ir1, the only Exit, is domestic: Telegram is blocked there.
 	m.s.Now = func() time.Time { return time.Now().Add(time.Hour) }
 	m.c.relayPending(bg)
 	got, err := m.c.UndeliveredAlerts(bg)
@@ -125,11 +128,35 @@ func TestUndeliverableAlertsWaitOnTheBanner(t *testing.T) {
 		!strings.Contains(got[0].LastError, "no healthy Exit") {
 		t.Errorf("banner = %+v", got[0])
 	}
+	if !strings.Contains(got[0].LastError, "abroad") {
+		t.Errorf("last error = %q, want it to say no Exit abroad", got[0].LastError)
+	}
 	// An empty group is not queued.
 	rec = httptest.NewRecorder()
 	m.c.InternalHandler().ServeHTTP(rec, httptest.NewRequest("POST", "/v1/alerts", strings.NewReader(`{"alerts":[]}`)))
 	if p, _ := m.s.PendingAlerts(bg); len(p) != 1 {
 		t.Errorf("%d pending", len(p))
+	}
+}
+
+// Telegram is blocked domestically, so a domestic Exit is never asked to
+// relay: it would only fail and delay the alert (on 2026-11-02 every
+// domestic Bridge got Iran's filter address for Telegram).
+func TestAlertsLeaveThroughExitsAbroad(t *testing.T) {
+	m := newMesh(t, "ab1", "ir1", "ab2", "ir2")
+	m.c.Monitor.Port, m.c.Monitor.Telegram.BotToken, m.c.Monitor.Telegram.ChatID = 9443, "tok", "chat"
+	var dialed []string
+	m.c.Monitor.Dial = func(_ context.Context, _, addr string) (net.Conn, error) {
+		dialed = append(dialed, addr)
+		return nil, errors.New("refused")
+	}
+	if err := m.c.relay(bg, "FIRING warning PathFlapping"); err == nil {
+		t.Fatal("relayed with every dial refused")
+	}
+	slices.Sort(dialed)
+	want := []string{m.addrs["ab1"] + ":9443", m.addrs["ab2"] + ":9443"}
+	if !slices.Equal(dialed, want) {
+		t.Errorf("dialed %v, want only the Exits abroad: %v", dialed, want)
 	}
 }
 

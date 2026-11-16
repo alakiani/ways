@@ -1,0 +1,111 @@
+# Managed by waymate.yml. Everything WAYMATE serves, on one hostname:
+#
+#   /                  Element Web
+#   /_matrix/...       Synapse (sign-in endpoints: MAS)
+#   /auth/             Matrix Authentication Service
+#   /livekit/jwt/      MatrixRTC authorization service
+#   /livekit/sfu/      LiveKit signalling (WebSocket)
+map $http_upgrade $waymate_connection {
+    default upgrade;
+    ''      '';
+}
+
+server {
+    listen 80;
+    server_name {{ waymate_domain }};
+    return 301 https://$host$request_uri;
+}
+
+server {
+    listen 443 ssl;
+    http2 on;
+    server_name {{ waymate_domain }};
+
+    ssl_certificate /etc/waymate/tls/tls.crt;
+    ssl_certificate_key /etc/waymate/tls/tls.key;
+    ssl_protocols TLSv1.2 TLSv1.3;
+
+    # No record of who asked for what.
+    access_log off;
+
+    client_max_body_size {{ waymate_max_upload }};
+
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+
+    # How clients find the homeserver and the call backend.
+    location = /.well-known/matrix/client {
+        default_type application/json;
+        add_header Access-Control-Allow-Origin * always;
+        return 200 '{{ waymate_wellknown_client | to_json }}';
+    }
+
+    # Federation is closed. This only tells the MatrixRTC authorization
+    # service where to check a caller's identity.
+    location = /.well-known/matrix/server {
+        default_type application/json;
+        return 200 '{"m.server": "{{ waymate_domain }}:443"}';
+    }
+
+    # The sign-in endpoints of the Matrix API belong to MAS.
+    location ~ ^/_matrix/client/(.*)/(login|logout|refresh) {
+        proxy_pass http://127.0.0.1:{{ waymate_mas_port }};
+    }
+
+    location ~ ^/(_matrix|_synapse/client) {
+        proxy_pass http://127.0.0.1:{{ waymate_synapse_port }};
+        proxy_read_timeout 120s;
+    }
+
+    location = /auth {
+        return 301 /auth/;
+    }
+
+    location /auth/ {
+        proxy_pass http://127.0.0.1:{{ waymate_mas_port }}/;
+    }
+
+    location /livekit/jwt/ {
+        proxy_pass http://127.0.0.1:{{ waymate_lk_jwt_port }}/;
+    }
+
+    location /livekit/sfu/ {
+        proxy_pass http://127.0.0.1:{{ waymate_livekit_port }}/;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $waymate_connection;
+        proxy_send_timeout 120s;
+        proxy_read_timeout 120s;
+        proxy_buffering off;
+    }
+
+    # Element Web: static files, with the config from this playbook.
+    root /usr/local/lib/waymate/element-v{{ waymate_versions.ELEMENT_WEB }};
+    index index.html;
+
+    add_header X-Frame-Options SAMEORIGIN always;
+    add_header X-Content-Type-Options nosniff always;
+    add_header Content-Security-Policy "frame-ancestors 'self'" always;
+
+    location = /config.json {
+        alias /usr/local/share/waymate/element-config.json;
+        default_type application/json;
+        add_header Cache-Control no-cache always;
+    }
+
+    # Element must always see a new version at once.
+    location ~ ^/(index\.html|version)?$ {
+        add_header Cache-Control no-cache always;
+        add_header X-Frame-Options SAMEORIGIN always;
+        add_header X-Content-Type-Options nosniff always;
+        add_header Content-Security-Policy "frame-ancestors 'self'" always;
+    }
+
+    location / {
+        try_files $uri $uri/ =404;
+    }
+}

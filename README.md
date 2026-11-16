@@ -78,6 +78,7 @@ are in [`docs/adr/`](docs/adr/).
 | `deploy/monitoring` | Generated Prometheus, Alertmanager and Grafana configuration |
 | `scripts/` | Build, fetch, provision and deploy helpers |
 | `docs/` | ADRs, the MVP plan, research notes |
+| `waymate/` | WAYMATE (همراه): messaging and video calls for WAYS Users. A separate product with its own VM, releases and pipeline; see [`waymate/README.md`](waymate/README.md) |
 
 ## Development
 

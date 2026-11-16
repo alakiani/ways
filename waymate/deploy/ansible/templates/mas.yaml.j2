@@ -1,0 +1,98 @@
+# Managed by waymate.yml. Matrix Authentication Service: every sign-in to
+# WAYMATE goes through it.
+http:
+  # nginx serves MAS under /auth/ and strips that prefix.
+  public_base: "https://{{ waymate_domain }}/auth/"
+  trusted_proxies:
+    - 127.0.0.0/8
+  listeners:
+    - name: web
+      resources:
+        - name: discovery
+        - name: human
+        - name: oauth
+        - name: compat
+        - name: graphql
+        - name: assets
+      binds:
+        - address: "127.0.0.1:{{ waymate_mas_port }}"
+    - name: internal
+      resources:
+        - name: health
+      binds:
+        - address: "127.0.0.1:{{ waymate_mas_port + 1 }}"
+
+database:
+  socket: /var/run/postgresql
+  username: waymate-mas
+  database: mas
+
+matrix:
+  kind: synapse
+  homeserver: "{{ waymate_server_name }}"
+  endpoint: "http://127.0.0.1:{{ waymate_synapse_port }}"
+  secret_file: /etc/waymate/mas/synapse-secret
+
+secrets:
+  encryption_file: /etc/waymate/mas/encryption
+  keys:
+    - key_file: /etc/waymate/mas/rsa.pem
+
+branding:
+  service_name: "{{ waymate_brand }}"
+
+# No email is ever sent: accounts carry no address.
+email:
+  from: '"{{ waymate_brand }}" <noreply@{{ waymate_domain }}>'
+  reply_to: '"{{ waymate_brand }}" <noreply@{{ waymate_domain }}>'
+  transport: blackhole
+
+account:
+  email_change_allowed: false
+  displayname_change_allowed: true
+  password_registration_enabled: false
+  password_recovery_enabled: false
+  login_with_email_allowed: false
+{% if waymate_oidc_issuer %}
+  password_change_allowed: false
+  # A WAYS User is removed in WAYS, not here.
+  account_deactivation_allowed: false
+
+# Sign-in through WAYS. With passwords off and one provider, MAS sends people
+# straight to it.
+passwords:
+  enabled: false
+
+upstream_oauth2:
+  providers:
+    - id: {{ waymate_oidc_provider_id }}
+      human_name: WAYS
+      issuer: "{{ waymate_oidc_issuer }}"
+      client_id: "{{ waymate_oidc_client_id }}"
+      client_secret_file: /etc/waymate/mas/oidc-client-secret
+      token_endpoint_auth_method: client_secret_basic
+      scope: "openid profile"
+      pkce_method: always
+      # The Coordinator ends a User's WAYMATE sessions, on every device, by
+      # sending a back-channel logout.
+      on_backchannel_logout: logout_all
+      claims_imports:
+        skip_confirmation: true
+        # The WAYS handle becomes the Matrix ID.
+        localpart:
+          action: require
+          template: "{% raw %}{{ user.preferred_username }}{% endraw %}"
+        displayname:
+          action: force
+          template: "{% raw %}{{ user.name }}{% endraw %}"
+        email:
+          action: ignore
+{% else %}
+  password_change_allowed: true
+  account_deactivation_allowed: true
+
+# WAYS sign-in is not configured: WAYMATE keeps its own passwords, and an
+# operator creates each account with `waymate-mas manage register-user`.
+passwords:
+  enabled: true
+{% endif %}

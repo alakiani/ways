@@ -1,0 +1,9 @@
+# Copy to ~/.waymate/inventory.yml. One Ubuntu 26.04 VM with SSH access and a
+# public IPv4; 2 vCPU and 4 GB is enough to start.
+all:
+  vars:
+    ansible_ssh_private_key_file: ~/.ssh/id_rsa
+  children:
+    waymate:
+      hosts:
+        waymate-01: {ansible_host: 203.0.113.10, ansible_user: ubuntu}

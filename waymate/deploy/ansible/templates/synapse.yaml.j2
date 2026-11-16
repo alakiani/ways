@@ -1,0 +1,84 @@
+# Managed by waymate.yml. Synapse reads this after the package's own
+# /etc/matrix-synapse/homeserver.yaml, and what is set here wins.
+#
+# The server name and the statistics switch are not here: the package keeps
+# them in its own two files beside this one, from the answers waymate.yml
+# gives it, and on every upgrade it rewrites any line that sets them.
+public_baseurl: "https://{{ waymate_domain }}/"
+serve_server_wellknown: false
+
+# Only nginx on this host reaches Synapse. There is no federation resource:
+# WAYMATE talks to no other Matrix server. openid is the one federation
+# endpoint kept, for the MatrixRTC authorization service to check who a
+# caller is.
+listeners:
+  - port: {{ waymate_synapse_port }}
+    type: http
+    bind_addresses: ["127.0.0.1"]
+    x_forwarded: true
+    resources:
+      - names: [client, openid]
+        compress: false
+
+federation_domain_whitelist: []
+trusted_key_servers: []
+allow_public_rooms_over_federation: false
+
+database:
+  name: psycopg2
+  args:
+    user: matrix-synapse
+    dbname: synapse
+    host: /var/run/postgresql
+    cp_min: 5
+    cp_max: 10
+
+# Sign-in belongs to Matrix Authentication Service.
+matrix_authentication_service:
+  enabled: true
+  endpoint: "http://127.0.0.1:{{ waymate_mas_port }}/"
+  secret_path: /etc/waymate/synapse/mas-secret
+enable_registration: false
+password_config:
+  enabled: false
+enable_3pid_changes: false
+
+macaroon_secret_key_path: /etc/waymate/synapse/macaroon
+form_secret_path: /etc/waymate/synapse/form
+
+max_upload_size: {{ waymate_max_upload }}
+url_preview_enabled: false
+encryption_enabled_by_default_for_room_type: all
+# A closed circle: anyone may find anyone.
+user_directory:
+  enabled: true
+  search_all_users: true
+# What reaches Apple and Google through the push gateway never carries
+# message content.
+push:
+  include_content: false
+
+# Calls: Element Call over MatrixRTC, with LiveKit carrying the media.
+app_service_config_files:
+  - /etc/waymate/synapse/lk-jwt-registration.yaml
+experimental_features:
+  msc3266_enabled: true
+  msc4143_enabled: true
+  msc4222_enabled: true
+  msc4502_enabled: true
+  msc4512_enabled: true
+max_event_delay_duration: 24h
+rc_message:
+  per_second: 0.5
+  burst_count: 30
+rc_delayed_event_mgmt:
+  per_second: 1
+  burst_count: 20
+matrix_rtc:
+  transports:
+    - type: m.livekit
+      url: "wss://{{ waymate_domain }}/livekit/sfu"
+    # For clients that don't know the stable transport yet.
+    - type: livekit
+      url: "wss://{{ waymate_domain }}/livekit/sfu"
+      livekit_service_url: "https://{{ waymate_domain }}/livekit/jwt"

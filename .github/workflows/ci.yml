@@ -1,9 +1,12 @@
 name: CI
 
+# WAYMATE (waymate/) has its own pipeline, waymate-ci.yml.
 on:
   push:
     branches: [main]
+    paths-ignore: ["waymate/**", ".github/workflows/waymate-*.yml"]
   pull_request:
+    paths-ignore: ["waymate/**", ".github/workflows/waymate-*.yml"]
 
 jobs:
   test:

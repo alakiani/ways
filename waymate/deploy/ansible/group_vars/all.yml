@@ -1,0 +1,50 @@
+# Everything the playbook needs from the laptop. waymate/scripts/waymate-ansible
+# loads ~/.waymate/waymate.env into the environment first.
+waymate_home: "{{ lookup('env', 'WAYMATE_HOME') or (lookup('env', 'HOME') ~ '/.waymate') }}"
+waymate_release: "{{ lookup('env', 'WAYMATE_RELEASE') }}"
+waymate_release_dir: "{{ waymate_home }}/releases/{{ waymate_release }}"
+
+# The one hostname everything is served on, such as chat.wayfinder.ir.
+waymate_domain: "{{ lookup('env', 'WAYMATE_DOMAIN') }}"
+# The Matrix server name: what follows the colon in every user ID
+# (@handle:chat.wayfinder.ir). It can never change after the first start.
+waymate_server_name: "{{ waymate_domain }}"
+# The address clients send call media to. Set WAYMATE_PUBLIC_IP when the VM
+# sits behind NAT and the inventory address is not the public one.
+waymate_public_ip: "{{ lookup('env', 'WAYMATE_PUBLIC_IP') or ansible_host }}"
+
+waymate_tls_cert: "{{ lookup('env', 'WAYMATE_TLS_CERT_FILE') }}"
+waymate_tls_key: "{{ lookup('env', 'WAYMATE_TLS_KEY_FILE') }}"
+
+# Sign-in through WAYS: the Coordinator as an OpenID Provider. While the
+# issuer is empty, WAYMATE keeps its own passwords and an operator creates
+# the accounts (see waymate/README.md).
+waymate_oidc_issuer: "{{ lookup('env', 'WAYMATE_OIDC_ISSUER') }}"
+waymate_oidc_client_id: "{{ lookup('env', 'WAYMATE_OIDC_CLIENT_ID') or 'waymate' }}"
+waymate_oidc_client_secret: "{{ lookup('env', 'WAYMATE_OIDC_CLIENT_SECRET') }}"
+# The id MAS knows the WAYS provider by. It is part of the redirect and
+# back-channel logout URLs registered with the Coordinator, so it is fixed.
+waymate_oidc_provider_id: 01JWAYMATE000000000000WAYS
+
+# A WAYS Device config for the VM's own outbound traffic: optional, for a VM
+# inside Iran that cannot reach the push gateway directly.
+waymate_ways_device_conf: "{{ lookup('env', 'WAYMATE_WAYS_DEVICE_CONF') }}"
+# Where phones' push notifications are handed over. Element X registers
+# Element's gateway; its lookups go through the WAYS Device when one is set.
+waymate_push_gateway_domains: [matrix.org]
+
+# Shown in Element Web and on the sign-in pages.
+waymate_brand: WAYMATE
+waymate_max_upload: 50M
+
+# Loopback ports of the services behind nginx.
+waymate_synapse_port: 8008
+waymate_mas_port: 8080
+waymate_livekit_port: 7880
+waymate_lk_jwt_port: 8090
+# Call media, open to the internet: ICE over TCP and one UDP port.
+waymate_rtc_tcp_port: 7881
+waymate_rtc_udp_port: 7882
+
+# chrony keeps the clock right; containers in the deploy test can't run it.
+waymate_chrony: true

@@ -1,0 +1,39 @@
+name: WAYMATE CI
+
+# WAYMATE has its own pipeline. It runs only when waymate/ changes, and the
+# WAYS pipeline (ci.yml) ignores those changes.
+on:
+  push:
+    branches: [main]
+    paths: ["waymate/**", ".github/workflows/waymate-*.yml"]
+  pull_request:
+    paths: ["waymate/**", ".github/workflows/waymate-*.yml"]
+
+jobs:
+  # The playbook against an Ubuntu 26.04 container, with a release bundle
+  # built as the WAYMATE Release workflow builds it.
+  waymate-deploy:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Lint the scripts
+        run: shellcheck -x waymate/scripts/* waymate/test/deploy-test.sh
+
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/waymate-downloads
+          key: waymate-downloads-${{ hashFiles('waymate/versions.env') }}
+
+      - name: Build a release
+        run: |
+          export WAYMATE_DOWNLOAD_CACHE="$HOME/.cache/waymate-downloads"
+          waymate/scripts/build-release.sh ci "$RUNNER_TEMP/release"
+
+      - name: Install Ansible
+        run: pipx install ansible-core==2.21.4
+
+      - name: Test the playbook
+        run: |
+          sudo modprobe wireguard # for the WAYS Device step
+          waymate/test/deploy-test.sh "$RUNNER_TEMP/release"

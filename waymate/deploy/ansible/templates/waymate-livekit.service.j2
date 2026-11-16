@@ -1,0 +1,17 @@
+# Managed by waymate.yml.
+[Unit]
+Description=WAYMATE call media (LiveKit)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=waymate-rtc
+Group=waymate-rtc
+ExecStart=/usr/local/lib/waymate/livekit-{{ waymate_versions.LIVEKIT }}/livekit-server --config /etc/waymate/rtc/livekit.yaml
+LimitNOFILE=65536
+NoNewPrivileges=yes
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

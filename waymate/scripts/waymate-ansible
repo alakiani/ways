@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+# waymate-ansible PLAYBOOK [ansible-playbook args] runs a WAYMATE playbook
+# against the VM in ~/.waymate: it loads waymate.env and uses inventory.yml
+# beside it (waymate/deploy/examples has a starting point for both).
+# WAYMATE_RELEASE picks the release in ~/.waymate/releases; it defaults to
+# the newest one there (waymate/scripts/fetch-release.sh downloads one).
+#
+#   waymate/scripts/waymate-ansible waymate.yml
+set -euo pipefail
+export WAYMATE_HOME="${WAYMATE_HOME:-$HOME/.waymate}"
+[[ $# -ge 1 ]] || { sed -n '2,8s/^# \{0,1\}//p' "$0"; exit 2; }
+[[ -f "$WAYMATE_HOME/waymate.env" ]] || { echo "no $WAYMATE_HOME/waymate.env: copy waymate/deploy/examples/waymate.env there and fill it in" >&2; exit 1; }
+set -a
+# shellcheck source=/dev/null
+. "$WAYMATE_HOME/waymate.env"
+set +a
+if [[ -z "${WAYMATE_RELEASE:-}" ]]; then
+  # shellcheck disable=SC2012 # release names are plain tags
+  WAYMATE_RELEASE=$(ls -t "$WAYMATE_HOME/releases" 2>/dev/null | head -n1 || true)
+  [[ -n "$WAYMATE_RELEASE" ]] || { echo "no release in $WAYMATE_HOME/releases: run waymate/scripts/fetch-release.sh VERSION" >&2; exit 1; }
+fi
+export WAYMATE_RELEASE
+echo "release $WAYMATE_RELEASE" >&2
+playbook="$1"; shift
+cd "$(dirname "$0")/../deploy/ansible"
+exec ansible-playbook -i "${WAYMATE_INVENTORY:-$WAYMATE_HOME/inventory.yml}" "$playbook" "$@"

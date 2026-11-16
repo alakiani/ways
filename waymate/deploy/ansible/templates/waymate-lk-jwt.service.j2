@@ -1,0 +1,17 @@
+# Managed by waymate.yml.
+[Unit]
+Description=WAYMATE call authorization (MatrixRTC authorization service)
+After=network-online.target waymate-livekit.service
+Wants=network-online.target
+
+[Service]
+User=waymate-rtc
+Group=waymate-rtc
+EnvironmentFile=/etc/waymate/rtc/lk-jwt.env
+ExecStart=/usr/local/lib/waymate/lk-jwt-service-{{ waymate_versions.LK_JWT }}
+NoNewPrivileges=yes
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

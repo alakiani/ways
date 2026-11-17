@@ -1,0 +1,29 @@
+name: WAYMATE Release
+
+# Pushing a tag such as waymate-v0.1.0 publishes a WAYMATE release the
+# operator downloads with waymate/scripts/fetch-release.sh. WAYS releases are
+# the v* tags (release.yml); the two never trigger each other.
+on:
+  push:
+    tags: ["waymate-v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build the release
+        run: waymate/scripts/build-release.sh "$GITHUB_REF_NAME" "$RUNNER_TEMP/release"
+
+      - name: Publish it
+        env:
+          GH_TOKEN: ${{ github.token }}
+        # Not "latest": that stays the newest WAYS release.
+        run: |
+          gh release create "$GITHUB_REF_NAME" "$RUNNER_TEMP"/release/* \
+            --title "$GITHUB_REF_NAME" --latest=false \
+            --notes "Download with waymate/scripts/fetch-release.sh $GITHUB_REF_NAME, then deploy with waymate/scripts/waymate-ansible waymate.yml."

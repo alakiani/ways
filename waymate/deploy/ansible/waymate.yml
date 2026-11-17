@@ -1,0 +1,539 @@
+# waymate.yml installs or upgrades the WAYMATE VM: Synapse, Matrix
+# Authentication Service (MAS), LiveKit, the MatrixRTC authorization service
+# and Element Web behind nginx, on PostgreSQL, all pushed from the release on
+# the laptop. Secrets are made on the VM and never leave it.
+#
+#   waymate/scripts/waymate-ansible waymate.yml
+- name: WAYMATE VM
+  hosts: waymate
+  become: true
+  vars:
+    waymate_lib: /usr/local/lib/waymate
+    waymate_wellknown_client:
+      m.homeserver:
+        base_url: "https://{{ waymate_domain }}"
+      org.matrix.msc4143.rtc_foci:
+        - type: livekit
+          livekit_service_url: "https://{{ waymate_domain }}/livekit/jwt"
+    # The routing table and rule priority of the WAYS Device's traffic.
+    waymate_out_table: 7767
+  pre_tasks:
+    - name: Check the laptop has what WAYMATE needs
+      ansible.builtin.assert:
+        that:
+          - waymate_release | length > 0
+          - waymate_domain | length > 0
+          - waymate_tls_cert | length > 0
+          - waymate_tls_key | length > 0
+          - (waymate_oidc_issuer | length > 0) == (waymate_oidc_client_secret | length > 0)
+        fail_msg: >-
+          Set WAYMATE_DOMAIN, WAYMATE_TLS_CERT_FILE and WAYMATE_TLS_KEY_FILE,
+          and WAYMATE_OIDC_ISSUER with WAYMATE_OIDC_CLIENT_SECRET as a pair,
+          in ~/.waymate/waymate.env (waymate/deploy/examples/waymate.env).
+
+    - name: Check the release against its SHA256SUMS
+      ansible.builtin.include_tasks: tasks/verify-release.yml
+
+    - name: Read the release's pinned versions
+      ansible.builtin.set_fact:
+        waymate_versions: >-
+          {{ dict(lookup('file', waymate_release_dir ~ '/versions.env').splitlines()
+             | map('regex_findall', '^([A-Z_0-9]+)=(.*)$') | select | map('first')) }}
+
+  tasks:
+    # ---- The VM ----
+    - name: Install Ubuntu's packages
+      ansible.builtin.apt:
+        name: >-
+          {{ ['nginx', 'postgresql', 'libpq5', 'openssl', 'ca-certificates']
+             + (['chrony'] if waymate_chrony else [])
+             + (['wireguard-tools'] if waymate_ways_device_conf else []) }}
+        update_cache: true
+        cache_valid_time: 3600
+
+    - name: Create the service groups
+      ansible.builtin.group:
+        name: "{{ item }}"
+        system: true
+      loop: [matrix-synapse, waymate-mas, waymate-rtc]
+
+    # matrix-synapse is the Synapse package's own user. It is made here so
+    # that Synapse's configuration is in place before the package starts it.
+    - name: Create the service users
+      ansible.builtin.user:
+        name: "{{ item.name }}"
+        group: "{{ item.name }}"
+        system: true
+        shell: /usr/sbin/nologin
+        home: "{{ item.home }}"
+        create_home: false
+      loop:
+        - { name: matrix-synapse, home: /var/lib/matrix-synapse }
+        - { name: waymate-mas, home: /nonexistent }
+        - { name: waymate-rtc, home: /nonexistent }
+      loop_control:
+        label: "{{ item.name }}"
+
+    - name: Create the directories
+      ansible.builtin.file:
+        path: "{{ item.path }}"
+        state: directory
+        owner: root
+        group: "{{ item.group }}"
+        mode: "{{ item.mode }}"
+      loop:
+        - { path: /etc/waymate, group: root, mode: "0755" }
+        - { path: /etc/waymate/secrets, group: root, mode: "0700" }
+        - { path: /etc/waymate/tls, group: root, mode: "0700" }
+        - { path: /etc/waymate/mas, group: waymate-mas, mode: "0750" }
+        - { path: /etc/waymate/synapse, group: matrix-synapse, mode: "0750" }
+        - { path: /etc/waymate/rtc, group: waymate-rtc, mode: "0750" }
+        - { path: "{{ waymate_lib }}", group: root, mode: "0755" }
+        - { path: "{{ waymate_lib }}/mas-{{ waymate_versions.MAS }}", group: root, mode: "0755" }
+        - { path: "{{ waymate_lib }}/livekit-{{ waymate_versions.LIVEKIT }}", group: root, mode: "0755" }
+        - { path: /usr/local/share/waymate, group: root, mode: "0755" }
+      loop_control:
+        label: "{{ item.path }}"
+
+    # The hostname's public certificate is served on loopback too, so the
+    # services reach each other by name without leaving the VM, whatever NAT
+    # the provider puts in front of it.
+    - name: Look for cloud-init's hosts template, which rewrites /etc/hosts on boot
+      ansible.builtin.stat:
+        path: /etc/cloud/templates/hosts.debian.tmpl
+      register: waymate_cloud_hosts
+
+    - name: Resolve the hostname to the VM itself
+      ansible.builtin.lineinfile:
+        path: "{{ item }}"
+        regexp: '\s{{ waymate_domain | regex_escape }}$'
+        line: "127.0.0.1 {{ waymate_domain }}"
+        unsafe_writes: true # /etc/hosts is a mount in a container
+      loop: "{{ ['/etc/hosts'] + (['/etc/cloud/templates/hosts.debian.tmpl'] if waymate_cloud_hosts.stat.exists else []) }}"
+
+    # ---- Secrets: made here once, readable by root only ----
+    - name: Make the secrets, once
+      ansible.builtin.shell:
+        cmd: |
+          set -euo pipefail
+          umask 077
+          {{ item.make }} > /etc/waymate/secrets/{{ item.name }}.new
+          mv /etc/waymate/secrets/{{ item.name }}.new /etc/waymate/secrets/{{ item.name }}
+        executable: /bin/bash
+        creates: "/etc/waymate/secrets/{{ item.name }}"
+      loop:
+        - { name: mas-synapse-secret, make: "openssl rand -hex 32 | tr -d '\\n'" }
+        - { name: mas-encryption, make: "openssl rand -hex 32 | tr -d '\\n'" }
+        - { name: mas-rsa.pem, make: "openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048" }
+        - { name: synapse-macaroon, make: "openssl rand -hex 32 | tr -d '\\n'" }
+        - { name: synapse-form, make: "openssl rand -hex 32 | tr -d '\\n'" }
+        - { name: livekit-secret, make: "openssl rand -hex 32 | tr -d '\\n'" }
+        - { name: lk-jwt-as-token, make: "openssl rand -hex 32 | tr -d '\\n'" }
+        - { name: lk-jwt-hs-token, make: "openssl rand -hex 32 | tr -d '\\n'" }
+      loop_control:
+        label: "{{ item.name }}"
+
+    - name: Give each service its own secrets
+      ansible.builtin.copy:
+        src: "/etc/waymate/secrets/{{ item.secret }}"
+        remote_src: true
+        dest: "{{ item.dest }}"
+        owner: root
+        group: "{{ item.group }}"
+        mode: "0640"
+      loop:
+        - { secret: mas-synapse-secret, dest: /etc/waymate/mas/synapse-secret, group: waymate-mas }
+        - { secret: mas-encryption, dest: /etc/waymate/mas/encryption, group: waymate-mas }
+        - { secret: mas-rsa.pem, dest: /etc/waymate/mas/rsa.pem, group: waymate-mas }
+        - { secret: mas-synapse-secret, dest: /etc/waymate/synapse/mas-secret, group: matrix-synapse }
+        - { secret: synapse-macaroon, dest: /etc/waymate/synapse/macaroon, group: matrix-synapse }
+        - { secret: synapse-form, dest: /etc/waymate/synapse/form, group: matrix-synapse }
+      loop_control:
+        label: "{{ item.dest }}"
+
+    - name: Read the secrets the templates carry
+      ansible.builtin.slurp:
+        src: "/etc/waymate/secrets/{{ item }}"
+      loop: [livekit-secret, lk-jwt-as-token, lk-jwt-hs-token]
+      register: waymate_secret_files
+      no_log: true
+
+    - name: Keep them for the templates
+      ansible.builtin.set_fact:
+        waymate_secrets: >-
+          {{ dict(waymate_secret_files.results | map(attribute='item')
+             | zip(waymate_secret_files.results | map(attribute='content') | map('b64decode'))) }}
+      no_log: true
+
+    # ---- PostgreSQL: each service signs in as its own system user ----
+    - name: Start PostgreSQL
+      ansible.builtin.systemd_service:
+        name: postgresql
+        enabled: true
+        state: started
+
+    - name: Wait for PostgreSQL
+      ansible.builtin.wait_for:
+        path: /var/run/postgresql/.s.PGSQL.5432
+        timeout: 120
+
+    - name: Create the database roles
+      ansible.builtin.shell:
+        cmd: |
+          set -euo pipefail
+          cd /
+          if ! runuser -u postgres -- psql -tAc "SELECT 1 FROM pg_roles WHERE rolname = '{{ item }}'" | grep -q 1; then
+            runuser -u postgres -- createuser "{{ item }}"
+            echo created
+          fi
+        executable: /bin/bash
+      loop: [matrix-synapse, waymate-mas]
+      register: waymate_roles
+      changed_when: "'created' in waymate_roles.stdout"
+
+    # Synapse refuses a database whose collation is not C.
+    - name: Create the databases
+      ansible.builtin.shell:
+        cmd: |
+          set -euo pipefail
+          cd /
+          if ! runuser -u postgres -- psql -tAc "SELECT 1 FROM pg_database WHERE datname = '{{ item.name }}'" | grep -q 1; then
+            runuser -u postgres -- createdb --encoding=UTF8 --locale=C --template=template0 --owner="{{ item.owner }}" "{{ item.name }}"
+            echo created
+          fi
+        executable: /bin/bash
+      loop:
+        - { name: synapse, owner: matrix-synapse }
+        - { name: mas, owner: waymate-mas }
+      loop_control:
+        label: "{{ item.name }}"
+      register: waymate_dbs
+      changed_when: "'created' in waymate_dbs.stdout"
+
+    # ---- Matrix Authentication Service ----
+    - name: Unpack Matrix Authentication Service
+      ansible.builtin.unarchive:
+        src: "{{ waymate_release_dir }}/mas-{{ waymate_versions.MAS }}-x86_64-linux.tar.gz"
+        dest: "{{ waymate_lib }}/mas-{{ waymate_versions.MAS }}"
+        creates: "{{ waymate_lib }}/mas-{{ waymate_versions.MAS }}/mas-cli"
+        owner: root
+        group: root
+
+    - name: Install the secret WAYS sign-in uses
+      ansible.builtin.copy:
+        content: "{{ waymate_oidc_client_secret }}"
+        dest: /etc/waymate/mas/oidc-client-secret
+        owner: root
+        group: waymate-mas
+        mode: "0640"
+      when: waymate_oidc_issuer | length > 0
+      no_log: true
+      register: waymate_oidc_secret
+
+    - name: Configure Matrix Authentication Service
+      ansible.builtin.template:
+        src: mas.yaml.j2
+        dest: /etc/waymate/mas/config.yaml
+        owner: root
+        group: waymate-mas
+        mode: "0640"
+        validate: "{{ waymate_lib }}/mas-{{ waymate_versions.MAS }}/mas-cli config check --config %s"
+      register: waymate_mas_config
+
+    - name: Install the waymate-mas command, for managing accounts on the VM
+      ansible.builtin.template:
+        src: waymate-mas.j2
+        dest: /usr/local/bin/waymate-mas
+        mode: "0755"
+
+    - name: Install Matrix Authentication Service's unit
+      ansible.builtin.template:
+        src: waymate-mas.service.j2
+        dest: /etc/systemd/system/waymate-mas.service
+        mode: "0644"
+      register: waymate_mas_unit
+
+    - name: Start Matrix Authentication Service, restarting it if its files changed
+      ansible.builtin.systemd_service:
+        name: waymate-mas
+        enabled: true
+        daemon_reload: true
+        state: >-
+          {{ 'restarted' if waymate_mas_config is changed or waymate_mas_unit is changed
+             or waymate_oidc_secret is changed else 'started' }}
+
+    # ---- Synapse ----
+    - name: Create Synapse's configuration directory
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        mode: "0755"
+      loop: [/etc/matrix-synapse, /etc/matrix-synapse/conf.d, /etc/systemd/system/matrix-synapse.service.d]
+
+    - name: Register the MatrixRTC authorization service with Synapse
+      ansible.builtin.template:
+        src: lk-jwt-registration.yaml.j2
+        dest: "{{ item.dest }}"
+        owner: root
+        group: "{{ item.group }}"
+        mode: "0640"
+      loop:
+        - { dest: /etc/waymate/synapse/lk-jwt-registration.yaml, group: matrix-synapse }
+        - { dest: /etc/waymate/rtc/lk-jwt-registration.yaml, group: waymate-rtc }
+      loop_control:
+        label: "{{ item.dest }}"
+      register: waymate_registration
+
+    - name: Configure Synapse
+      ansible.builtin.template:
+        src: synapse.yaml.j2
+        dest: /etc/matrix-synapse/conf.d/waymate.yaml
+        owner: root
+        group: matrix-synapse
+        mode: "0640"
+      register: waymate_synapse_config
+
+    # The first start builds the whole database, which can outlast systemd's
+    # default 90 seconds on a small VM.
+    - name: Give Synapse time to start, after PostgreSQL and MAS
+      ansible.builtin.copy:
+        content: |
+          # Managed by waymate.yml.
+          [Unit]
+          After=postgresql.service waymate-mas.service
+          [Service]
+          TimeoutStartSec=600
+        dest: /etc/systemd/system/matrix-synapse.service.d/waymate.conf
+        mode: "0644"
+
+    - name: Answer the Synapse package's questions
+      ansible.builtin.debconf:
+        name: matrix-synapse-py3
+        question: "{{ item.question }}"
+        vtype: "{{ item.vtype }}"
+        value: "{{ item.value }}"
+      loop:
+        - { question: matrix-synapse/server-name, vtype: string, value: "{{ waymate_server_name }}" }
+        - { question: matrix-synapse/report-stats, vtype: boolean, value: "false" }
+      loop_control:
+        label: "{{ item.question }}"
+
+    - name: Copy the Synapse package to the VM
+      ansible.builtin.copy:
+        src: "{{ waymate_release_dir }}/synapse-{{ waymate_versions.SYNAPSE }}-amd64.deb"
+        dest: "{{ waymate_lib }}/synapse-{{ waymate_versions.SYNAPSE }}-amd64.deb"
+        mode: "0644"
+
+    # Installing or upgrading the package (re)starts Synapse.
+    - name: Install Synapse
+      ansible.builtin.apt:
+        deb: "{{ waymate_lib }}/synapse-{{ waymate_versions.SYNAPSE }}-amd64.deb"
+        allow_downgrade: true
+      register: waymate_synapse_package
+
+    - name: Start Synapse, restarting it if its files changed
+      ansible.builtin.systemd_service:
+        name: matrix-synapse
+        enabled: true
+        daemon_reload: true
+        state: >-
+          {{ 'restarted' if waymate_synapse_package is not changed
+             and (waymate_synapse_config is changed or waymate_registration is changed) else 'started' }}
+
+    # ---- Calls: LiveKit and the MatrixRTC authorization service ----
+    - name: Unpack LiveKit
+      ansible.builtin.unarchive:
+        src: "{{ waymate_release_dir }}/livekit-{{ waymate_versions.LIVEKIT }}-linux-amd64.tar.gz"
+        dest: "{{ waymate_lib }}/livekit-{{ waymate_versions.LIVEKIT }}"
+        creates: "{{ waymate_lib }}/livekit-{{ waymate_versions.LIVEKIT }}/livekit-server"
+        owner: root
+        group: root
+
+    - name: Install the MatrixRTC authorization service
+      ansible.builtin.copy:
+        src: "{{ waymate_release_dir }}/lk-jwt-service-{{ waymate_versions.LK_JWT }}-linux-amd64"
+        dest: "{{ waymate_lib }}/lk-jwt-service-{{ waymate_versions.LK_JWT }}"
+        mode: "0755"
+
+    - name: Configure LiveKit and the MatrixRTC authorization service
+      ansible.builtin.template:
+        src: "{{ item.src }}"
+        dest: "/etc/waymate/rtc/{{ item.dest }}"
+        owner: root
+        group: waymate-rtc
+        mode: "0640"
+      loop:
+        - { src: livekit.yaml.j2, dest: livekit.yaml, service: waymate-livekit }
+        - { src: lk-jwt.env.j2, dest: lk-jwt.env, service: waymate-lk-jwt }
+      loop_control:
+        label: "{{ item.dest }}"
+      register: waymate_rtc_config
+      no_log: true
+
+    - name: Install their units
+      ansible.builtin.template:
+        src: "{{ item }}.service.j2"
+        dest: "/etc/systemd/system/{{ item }}.service"
+        mode: "0644"
+      loop: [waymate-livekit, waymate-lk-jwt]
+      register: waymate_rtc_units
+
+    - name: Start them, restarting any whose files changed
+      ansible.builtin.systemd_service:
+        name: "{{ item }}"
+        enabled: true
+        daemon_reload: true
+        state: >-
+          {{ 'restarted'
+             if (waymate_rtc_config.results | selectattr('changed') | selectattr('item.service', 'eq', item) | list)
+             or (waymate_rtc_units.results | selectattr('changed') | selectattr('item', 'eq', item) | list)
+             or (item == 'waymate-lk-jwt' and waymate_registration is changed)
+             else 'started' }}
+      loop: [waymate-livekit, waymate-lk-jwt]
+
+    # ---- Element Web and nginx ----
+    - name: Unpack Element Web
+      ansible.builtin.unarchive:
+        src: "{{ waymate_release_dir }}/element-web-{{ waymate_versions.ELEMENT_WEB }}.tar.gz"
+        dest: "{{ waymate_lib }}"
+        creates: "{{ waymate_lib }}/element-v{{ waymate_versions.ELEMENT_WEB }}/index.html"
+        owner: root
+        group: root
+
+    - name: Configure Element Web
+      ansible.builtin.template:
+        src: element-config.json.j2
+        dest: /usr/local/share/waymate/element-config.json
+        mode: "0644"
+
+    - name: Install the TLS certificate
+      ansible.builtin.copy:
+        src: "{{ item.src }}"
+        dest: "/etc/waymate/tls/{{ item.dest }}"
+        mode: "{{ item.mode }}"
+      loop:
+        - { src: "{{ waymate_tls_cert }}", dest: tls.crt, mode: "0644" }
+        - { src: "{{ waymate_tls_key }}", dest: tls.key, mode: "0600" }
+      loop_control:
+        label: "{{ item.dest }}"
+      notify: Reload nginx
+
+    - name: Configure nginx
+      ansible.builtin.template:
+        src: nginx.conf.j2
+        dest: /etc/nginx/sites-available/waymate
+        mode: "0644"
+      notify: Reload nginx
+
+    - name: Serve WAYMATE's site
+      ansible.builtin.file:
+        src: /etc/nginx/sites-available/waymate
+        dest: /etc/nginx/sites-enabled/waymate
+        state: link
+      notify: Reload nginx
+
+    - name: Stop serving nginx's placeholder site
+      ansible.builtin.file:
+        path: /etc/nginx/sites-enabled/default
+        state: absent
+      notify: Reload nginx
+
+    - name: Check nginx's configuration
+      ansible.builtin.command:
+        cmd: nginx -t
+      changed_when: false
+
+    - name: Start nginx
+      ansible.builtin.systemd_service:
+        name: nginx
+        enabled: true
+        state: started
+
+    # ---- Optional: the VM's own way out through WAYS ----
+    - name: Read the WAYS Device config
+      ansible.builtin.set_fact:
+        waymate_device:
+          private_key: "{{ waymate_device_text | regex_search('(?m)^PrivateKey\\s*=\\s*(\\S+)', '\\1') | first }}"
+          address: "{{ waymate_device_text | regex_search('(?m)^Address\\s*=\\s*([0-9.]+/[0-9]+)', '\\1') | first }}"
+          dns: "{{ (waymate_device_text | regex_search('(?m)^DNS\\s*=\\s*([0-9.]+)', '\\1') or ['']) | first }}"
+          public_key: "{{ waymate_device_text | regex_search('(?m)^PublicKey\\s*=\\s*(\\S+)', '\\1') | first }}"
+          endpoint: "{{ waymate_device_text | regex_search('(?m)^Endpoint\\s*=\\s*(\\S+)', '\\1') | first }}"
+      vars:
+        waymate_device_text: "{{ lookup('file', waymate_ways_device_conf) }}"
+      when: waymate_ways_device_conf | length > 0
+      no_log: true
+
+    - name: Look up Synapse's user id
+      ansible.builtin.getent:
+        database: passwd
+        key: matrix-synapse
+      when: waymate_ways_device_conf | length > 0
+
+    - name: Configure the WAYS Device
+      ansible.builtin.template:
+        src: ways-out.conf.j2
+        dest: /etc/wireguard/ways-out.conf
+        mode: "0600"
+      vars:
+        waymate_synapse_uid: "{{ ansible_facts.getent_passwd['matrix-synapse'][1] }}"
+      when: waymate_ways_device_conf | length > 0
+      no_log: true
+      register: waymate_out_config
+
+    - name: Bring the WAYS Device up
+      ansible.builtin.systemd_service:
+        name: wg-quick@ways-out
+        enabled: true
+        state: "{{ 'restarted' if waymate_out_config is changed else 'started' }}"
+      when: waymate_ways_device_conf | length > 0
+
+    - name: Look for a WAYS Device that is no longer wanted
+      ansible.builtin.stat:
+        path: /etc/wireguard/ways-out.conf
+      register: waymate_out_left
+      when: waymate_ways_device_conf | length == 0
+
+    - name: Take it down
+      ansible.builtin.systemd_service:
+        name: wg-quick@ways-out
+        enabled: false
+        state: stopped
+      when: waymate_ways_device_conf | length == 0 and waymate_out_left.stat.exists
+
+    - name: Remove its config
+      ansible.builtin.file:
+        path: /etc/wireguard/ways-out.conf
+        state: absent
+      when: waymate_ways_device_conf | length == 0 and waymate_out_left.stat.exists
+
+    # ---- Does it answer? ----
+    - name: Reload nginx now, if its files changed
+      ansible.builtin.meta: flush_handlers
+
+    - name: Wait until every part of WAYMATE answers
+      ansible.builtin.uri:
+        url: "https://{{ waymate_domain }}{{ item }}"
+      register: waymate_check
+      until: waymate_check.status == 200
+      retries: 60
+      delay: 3
+      loop:
+        - /_matrix/client/versions # Synapse
+        - /auth/.well-known/openid-configuration # MAS
+        - /_matrix/client/v1/auth_metadata # Synapse reaching MAS
+        - /livekit/jwt/healthz # the MatrixRTC authorization service
+        - /livekit/sfu/ # LiveKit
+        - /config.json # Element Web
+
+    - name: How people sign in
+      ansible.builtin.debug:
+        msg: >-
+          {{ 'People sign in at https://' ~ waymate_domain ~ ' with their WAYS account.'
+             if waymate_oidc_issuer else
+             'WAYS sign-in is off (WAYMATE_OIDC_ISSUER is empty). Create each account on the VM with: sudo waymate-mas manage register-user' }}
+
+  handlers:
+    - name: Reload nginx
+      ansible.builtin.systemd_service:
+        name: nginx
+        state: reloaded

@@ -1,0 +1,18 @@
+# Managed by waymate.yml. Registers the MatrixRTC authorization service with
+# Synapse as an application service: Synapse hands it the /rtc/livekit calls,
+# and it may ask Synapse whether a user is in a room. Synapse and the service
+# each read their own copy.
+id: waymate-lk-jwt
+as_token: "{{ waymate_secrets['lk-jwt-as-token'] }}"
+hs_token: "{{ waymate_secrets['lk-jwt-hs-token'] }}"
+sender_localpart: _lk_jwt_service
+rate_limited: false
+namespaces:
+  users:
+    - exclusive: false
+      regex: ".*"
+# The service wants no events.
+url: null
+io.element.msc4502.scopes: ["urn:matrix:client:io.element.msc4502:rooms:is_joined"]
+io.element.msc4512.proxy_prefix: "rtc/livekit"
+io.element.msc4512.proxy_url: "http://127.0.0.1:{{ waymate_lk_jwt_port }}"

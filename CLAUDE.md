@@ -13,3 +13,7 @@ Default five-role vocabulary (`needs-triage`, `needs-info`, `ready-for-agent`, `
 ### Domain docs
 
 Single-context: one `GLOSSARY.md` + `docs/adr/` at the repo root. See `docs/agents/domain.md`.
+
+## WAYMATE
+
+`waymate/` is a separate product: messaging and calls for WAYS Users, on its own VM. Keep every change on one side. A WAYMATE change touches only `waymate/` and `.github/workflows/waymate-*.yml`, is tested by `waymate/test/deploy-test.sh`, and is released with a `waymate-v*` tag. See `waymate/README.md`.

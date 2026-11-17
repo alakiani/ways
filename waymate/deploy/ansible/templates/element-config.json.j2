@@ -1,0 +1,25 @@
+{{ {
+  "default_server_config": {
+    "m.homeserver": {
+      "base_url": "https://" ~ waymate_domain,
+      "server_name": waymate_server_name
+    }
+  },
+  "disable_custom_urls": true,
+  "disable_guests": true,
+  "disable_3pid_login": true,
+  "brand": waymate_brand,
+  "default_theme": "light",
+  "default_country_code": "IR",
+  "default_federate": false,
+  "show_labs_settings": false,
+  "room_directory": {"servers": [waymate_server_name]},
+  "integrations_ui_url": none,
+  "integrations_rest_url": none,
+  "integrations_widgets_urls": none,
+  "element_call": {
+    "brand": waymate_brand ~ " Call",
+    "use_exclusively": true
+  },
+  "features": {}
+} | to_nice_json(indent=2) }}

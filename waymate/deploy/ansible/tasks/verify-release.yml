@@ -1,0 +1,41 @@
+# Checks every file of the release on the laptop against its SHA256SUMS,
+# before the playbook touches the VM: a download cut off half-way must not
+# reach production.
+- name: Read the release's SHA256SUMS
+  ansible.builtin.set_fact:
+    waymate_release_sums: >-
+      {{ dict(lookup('file', waymate_release_dir ~ '/SHA256SUMS').splitlines()
+         | map('regex_findall', '^([0-9a-f]{64})\s+\*?(\S+)$') | select | map('first')
+         | map('reverse')) }}
+  delegate_to: localhost
+  become: false
+  run_once: true
+
+- name: Hash the release's files
+  ansible.builtin.stat:
+    path: "{{ waymate_release_dir }}/{{ item }}"
+    checksum_algorithm: sha256
+    follow: true
+  loop: "{{ waymate_release_sums.keys() | list }}"
+  register: waymate_release_files
+  delegate_to: localhost
+  become: false
+  run_once: true
+
+- name: Check the release's files match SHA256SUMS
+  ansible.builtin.assert:
+    that:
+      - waymate_release_sums | length > 0
+      - waymate_release_bad | length == 0
+    fail_msg: >-
+      Release {{ waymate_release }} in {{ waymate_release_dir }} is incomplete or
+      damaged: {{ waymate_release_bad | join(', ') if waymate_release_bad else 'SHA256SUMS lists no files' }}.
+      Delete that folder and run waymate/scripts/fetch-release.sh {{ waymate_release }} again.
+    quiet: true
+  vars:
+    waymate_release_bad: >-
+      {% set bad = [] %}{% for r in waymate_release_files.results %}{% if not r.stat.exists
+      or r.stat.checksum | default('') != waymate_release_sums[r.item] %}{% set _ = bad.append(r.item) %}{% endif %}{% endfor %}{{ bad }}
+  delegate_to: localhost
+  become: false
+  run_once: true

@@ -1,0 +1,10 @@
+#!/bin/sh
+# Managed by waymate.yml. Runs the Matrix Authentication Service CLI the way
+# the service runs it, for account management from a shell on the VM:
+#
+#   sudo waymate-mas manage register-user
+#   sudo waymate-mas manage lock-user HANDLE
+#   sudo waymate-mas doctor
+set -e
+cd /usr/local/lib/waymate/mas-{{ waymate_versions.MAS }}
+exec runuser -u waymate-mas -- env MAS_CONFIG=/etc/waymate/mas/config.yaml ./mas-cli "$@"

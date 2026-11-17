@@ -1,0 +1,31 @@
+# Managed by waymate.yml. LiveKit forwards call media between participants.
+# Calls are end-to-end encrypted, so it only ever sees ciphertext.
+
+# Signalling: nginx proxies /livekit/sfu/ here.
+port: {{ waymate_livekit_port }}
+bind_addresses: ["127.0.0.1"]
+
+# Media, open to the internet. The address is given rather than discovered:
+# discovery asks public STUN servers abroad.
+rtc:
+  tcp_port: {{ waymate_rtc_tcp_port }}
+  udp_port: {{ waymate_rtc_udp_port }}
+  use_external_ip: false
+  node_ip: {{ waymate_public_ip }}
+
+# Only the MatrixRTC authorization service creates rooms.
+room:
+  auto_create: false
+
+keys:
+  waymate: "{{ waymate_secrets['livekit-secret'] }}"
+
+# Tells the authorization service when a participant drops, so a call never
+# shows someone who has gone.
+webhook:
+  api_key: waymate
+  urls:
+    - "http://127.0.0.1:{{ waymate_lk_jwt_port }}/sfu_webhook"
+
+logging:
+  level: info

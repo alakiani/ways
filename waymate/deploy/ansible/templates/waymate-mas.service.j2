@@ -1,0 +1,19 @@
+# Managed by waymate.yml.
+[Unit]
+Description=WAYMATE sign-in (Matrix Authentication Service)
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+User=waymate-mas
+Group=waymate-mas
+# MAS finds its templates, policy and assets in ./share.
+WorkingDirectory=/usr/local/lib/waymate/mas-{{ waymate_versions.MAS }}
+Environment=MAS_CONFIG=/etc/waymate/mas/config.yaml
+ExecStart=/usr/local/lib/waymate/mas-{{ waymate_versions.MAS }}/mas-cli server
+NoNewPrivileges=yes
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

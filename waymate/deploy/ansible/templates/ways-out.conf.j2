@@ -1,0 +1,26 @@
+# Managed by waymate.yml, from the WAYS Device config on the laptop.
+#
+# The VM is a WAYS Device here, for one purpose: Synapse's traffic to the
+# outside (the push gateway that wakes phones) leaves through WAYS. Nothing
+# else on the VM changes its route, so `Table = off` keeps wg-quick from
+# taking the default route, and the rules below send only Synapse's user in.
+[Interface]
+PrivateKey = {{ waymate_device.private_key }}
+Address = {{ waymate_device.address }}
+Table = off
+PostUp = sysctl -q -w net.ipv4.conf.%i.rp_filter=2
+PostUp = ip route replace default dev %i table {{ waymate_out_table }}
+PostUp = ip rule add uidrange {{ waymate_synapse_uid }}-{{ waymate_synapse_uid }} lookup {{ waymate_out_table }} priority {{ waymate_out_table }}
+{% if waymate_device.dns %}
+# The push gateway's name is looked up through the Bridge resolver, which
+# resolves abroad; every other name keeps the VM's own resolver.
+PostUp = ip route replace {{ waymate_device.dns }}/32 dev %i
+PostUp = if systemctl -q is-active systemd-resolved; then resolvectl dns %i {{ waymate_device.dns }}; resolvectl domain %i {{ waymate_push_gateway_domains | map('regex_replace', '^', '~') | join(' ') }}; fi
+{% endif %}
+PreDown = ip rule del uidrange {{ waymate_synapse_uid }}-{{ waymate_synapse_uid }} lookup {{ waymate_out_table }} priority {{ waymate_out_table }}
+
+[Peer]
+PublicKey = {{ waymate_device.public_key }}
+Endpoint = {{ waymate_device.endpoint }}
+AllowedIPs = 0.0.0.0/0
+PersistentKeepalive = 25
